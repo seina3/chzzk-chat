@@ -23,7 +23,8 @@ export interface ChartOptions {
  * 비어 있는 구간도 0으로 채워 시간 흐름이 끊기지 않게 한다.
  */
 export function barChartHtml(rows: TimeBucket[], o: ChartOptions): string {
-  const byBucket = new Map(rows.map((r) => [r.bucket, r]));
+  // 버킷 번호는 정수로 맞춰 둔다 (SQLite가 실수로 돌려주는 경우 대비)
+  const byBucket = new Map(rows.map((r) => [Math.floor(r.bucket), r]));
   const first = Math.floor(o.from / o.bucketMs);
   const last = Math.floor(o.to / o.bucketMs);
   const count = Math.max(1, Math.min(last - first + 1, 400));
@@ -38,7 +39,8 @@ export function barChartHtml(rows: TimeBucket[], o: ChartOptions): string {
     });
   }
 
-  const max = Math.max(1, ...values.map((v) => v.value));
+  const max = Math.max(...values.map((v) => v.value));
+  if (max <= 0) return ""; // 그릴 값이 없으면 빈 상자를 남기지 않는다
   const W = 100; // viewBox 기준 (가로는 CSS로 늘어남)
   const H = 40;
   const gap = count > 60 ? 0 : 0.6;

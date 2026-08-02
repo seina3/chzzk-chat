@@ -183,15 +183,10 @@ export class DonationsModal {
     const hourly = this.period === "1d";
     const bucketMs = hourly ? 3_600_000 : DAY_MS;
 
-    // 전체 기간이면 가장 오래된 기록부터, 아니면 기간 시작부터
-    let from = f.since;
-    if (from === 0) {
-      const rows = await getTimeSeries(f, bucketMs, donations);
-      if (rows.length === 0) return "";
-      from = rows[0].bucket * bucketMs;
-    }
     const rows = await getTimeSeries(f, bucketMs, donations);
     if (rows.length === 0) return "";
+    // 전체 기간이면 가장 오래된 기록부터, 아니면 기간 시작부터
+    const from = f.since > 0 ? f.since : rows[0].bucket * bucketMs;
 
     const pad = (n: number) => String(n).padStart(2, "0");
     return barChartHtml(rows, {

@@ -524,8 +524,9 @@ export async function getTimeSeries(
     params.push(f.channelId);
     where += ` AND channel_id = $${params.length}`;
   }
+  // 나눗셈 결과가 실수가 되면 JS 쪽 버킷 번호와 어긋나므로 정수로 맞춘다
   return requireDb().select<TimeBucket[]>(
-    `SELECT (msg_time / $1) AS bucket,
+    `SELECT CAST(msg_time / $1 AS INTEGER) AS bucket,
             COUNT(*) AS cnt,
             COALESCE(SUM(pay_amount), 0) AS total
      FROM messages WHERE ${where}
