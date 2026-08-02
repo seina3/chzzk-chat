@@ -3,7 +3,7 @@ import {
   searchUsers,
   type StoredMessage,
 } from "../db";
-import { getChannels } from "../settings";
+import { channelName } from "../channel-names";
 import {
   blindRowClass,
   blindTagHtml,
@@ -150,12 +150,7 @@ export class GlobalSearchModal {
     } catch {
       /* 무시 */
     }
-    const channelName = getChannels().find(
-      (c) => c.channelId === row.channel_id,
-    )?.name;
-    const channelTag = channelName
-      ? `<span class="channel-tag">${escapeHtml(channelName)}</span>`
-      : "";
+    const channelTag = `<span class="channel-tag">${escapeHtml(channelName(row.channel_id))}</span>`;
     const cheese =
       row.msg_type === "donation" && row.pay_amount
         ? `<span class="cheese">🧀 ${formatNumber(row.pay_amount)}</span> `

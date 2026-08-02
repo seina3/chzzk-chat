@@ -4,7 +4,7 @@ import {
   type StoredMessage,
   type UserStats,
 } from "../db";
-import { getChannels } from "../settings";
+import { channelName } from "../channel-names";
 import {
   blindRowClass,
   blindTagHtml,
@@ -97,9 +97,21 @@ export class UserHistoryModal {
     if (!s) return;
     // 익명 후원은 보낸 사람을 구분할 수 없어 전체를 한데 모아 보여준다
     const anonymous = this.userIdHash === "anonymous";
+    // 닉네임을 바꾼 적이 있으면 접어서 보여준다 (기간과 사용 횟수 포함)
     const aka =
       !anonymous && s.nicknames.length > 1
-        ? ` · 닉네임 변경 이력: ${s.nicknames.map(escapeHtml).join(", ")}`
+        ? `<details class="nick-history"><summary>닉네임 ${s.nicknames.length}개 사용 (변경 기록 보기)</summary>` +
+          s.nicknames
+            .map(
+              (n, i) =>
+                `<div class="nick-history-row">` +
+                `<span class="nick">${escapeHtml(n.nickname)}</span>` +
+                `${i === 0 ? '<span class="nick-current">현재</span>' : ""}` +
+                `<span class="nick-history-meta">${formatDateTime(n.first_seen)} ~ ${formatDateTime(n.last_seen)} · ${formatNumber(n.cnt)}회</span>` +
+                `</div>`,
+            )
+            .join("") +
+          `</details>`
         : "";
     const uid = anonymous
       ? `<br><span class="uid">익명 후원은 보낸 사람을 구분할 수 없어 전체를 합쳐 보여줍니다.</span>`
@@ -108,7 +120,7 @@ export class UserHistoryModal {
     if (this.donationsOnly) {
       const total = `<span class="cheese">🧀 ${formatNumber(s.donationTotal)}</span>`;
       this.statsEl.innerHTML =
-        `후원 ${total} · ${formatNumber(s.donationCount)}회${aka}${uid}`;
+        `후원 ${total} · ${formatNumber(s.donationCount)}회${uid}${aka}`;
       return;
     }
 
@@ -123,7 +135,7 @@ export class UserHistoryModal {
           ` (${formatNumber(s.donationCount)}회)`
         : "";
     this.statsEl.innerHTML =
-      `총 채팅 ${formatNumber(s.count)}회${donation}${range}${aka}${uid}`;
+      `총 채팅 ${formatNumber(s.count)}회${donation}${range}${uid}${aka}`;
   }
 
   private syncTabs(): void {
@@ -177,12 +189,7 @@ export class UserHistoryModal {
     } catch {
       /* 구버전 데이터 무시 */
     }
-    const channelName = getChannels().find(
-      (c) => c.channelId === row.channel_id,
-    )?.name;
-    const channelTag = channelName
-      ? `<span class="channel-tag">${escapeHtml(channelName)}</span>`
-      : "";
+    const channelTag = `<span class="channel-tag">${escapeHtml(channelName(row.channel_id))}</span>`;
     const cheese =
       row.msg_type === "donation" && row.pay_amount
         ? `<span class="cheese">🧀 ${formatNumber(row.pay_amount)}</span> `

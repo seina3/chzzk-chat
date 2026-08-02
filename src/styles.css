@@ -973,3 +973,94 @@ dialog::backdrop {
 #settings-modal label input:not([type="checkbox"]) {
   flex: 1;
 }
+
+/* ---------- 채널 우클릭 메뉴 ---------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 160px;
+  list-style: none;
+  padding: 4px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+}
+
+.context-menu li {
+  padding: 7px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.context-menu li:hover {
+  background: var(--bg-hover);
+}
+
+.context-menu li.danger {
+  color: #e57373;
+}
+
+/* ---------- 닉네임 변경 기록 ---------- */
+
+.nick-history {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 8px;
+}
+
+.nick-history summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.nick-history-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.nick-history-row:last-child {
+  border-bottom: none;
+}
+
+.nick-history-row .nick {
+  font-weight: bold;
+}
+
+.nick-current {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: #04281d;
+  font-weight: bold;
+}
+
+.nick-history-meta {
+  flex: 1;
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+/* ---------- 채팅 순위 ---------- */
+
+.donation-total.chat-total {
+  color: var(--accent);
+}
+
+.donation-user-total.chat-count {
+  color: var(--accent);
+}
+
+#rename-input {
+  width: 100%;
+}

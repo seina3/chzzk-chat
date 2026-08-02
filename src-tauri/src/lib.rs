@@ -244,6 +244,27 @@ async fn open_log_dir(app: AppHandle, base_dir: Option<String>) -> Result<(), St
     Ok(())
 }
 
+/// 치지직 페이지를 기본 브라우저로 연다 (채널 우클릭 → 채널 열기).
+#[tauri::command]
+async fn open_url(url: String) -> Result<(), String> {
+    let parsed: Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("chzzk.naver.com") {
+        return Err(format!("허용되지 않은 주소: {url}"));
+    }
+    #[cfg(target_os = "windows")]
+    let (opener, args): (&str, Vec<&str>) = ("cmd", vec!["/C", "start", ""]);
+    #[cfg(target_os = "macos")]
+    let (opener, args): (&str, Vec<&str>) = ("open", vec![]);
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let (opener, args): (&str, Vec<&str>) = ("xdg-open", vec![]);
+    std::process::Command::new(opener)
+        .args(args)
+        .arg(parsed.as_str())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 채팅 한 줄을 채널별/날짜별 txt 로그 파일에 append한다.
 /// 경로: <로그 폴더>/<채널명>/<YYYY-MM-DD>.txt
 #[tauri::command]
@@ -316,7 +337,8 @@ pub fn run() {
             append_chat_log,
             chzzk_get,
             get_default_log_dir,
-            open_log_dir
+            open_log_dir,
+            open_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -15,7 +15,9 @@ import {
   markMessageBlinded,
   saveMessage,
 } from "./db";
+import { channelName, loadChannelNames, noteChannelName } from "./channel-names";
 import {
+  displayName,
   getChannels,
   getSettings,
   hasAuth,
@@ -38,8 +40,8 @@ const userModal = new UserHistoryModal();
 const searchModal = new GlobalSearchModal((uid, nick) => {
   void userModal.open(uid, nick);
 });
-const donationsModal = new DonationsModal((uid, nick) => {
-  void userModal.open(uid, nick, true);
+const donationsModal = new DonationsModal((uid, nick, donationsOnly) => {
+  void userModal.open(uid, nick, donationsOnly);
 });
 const chatView = new ChatView("chat-messages", "scroll-bottom", (uid, nick) => {
   void userModal.open(uid, nick);
@@ -76,7 +78,7 @@ const collector = new ChatCollector({
     if (channelId === activeChannelId) dashboard.update(live);
     if (justStarted && live) {
       const name =
-        getChannels().find((c) => c.channelId === channelId)?.name ?? "채널";
+        channelName(channelId);
       notifyLiveStart(name, live.liveTitle);
       if (channelId === activeChannelId) {
         chatView.addSystem(`🔴 방송이 시작되었습니다: ${live.liveTitle}`);
@@ -128,13 +130,12 @@ function appendTxtLog(m: ChatMessage): void {
     m.type === "subscription" || m.type === "system"
       ? `[${time}] * ${content}`
       : `[${time}]${donation} <${m.nickname}> ${content}`;
-  const channelName =
-    getChannels().find((c) => c.channelId === m.channelId)?.name ?? m.channelId;
+  const channel = channelName(m.channelId);
   const baseDir = getSettings().logDir || null;
 
   logChain = logChain
     .then(() =>
-      invoke("append_chat_log", { channel: channelName, date, line, baseDir }),
+      invoke("append_chat_log", { channel, date, line, baseDir }),
     )
     .catch((e) => console.error("txt 로그 저장 실패:", e));
 }
@@ -157,8 +158,11 @@ function renderChannelList(): void {
         ? `<span class="rec" title="채팅 수집 중">●</span>`
         : "";
     // 이름이 잘리므로 전체 이름과 채널 ID를 툴팁으로 보여준다
-    li.title = `${ch.name}\n${ch.channelId}`;
-    li.innerHTML = `${img}<span class="channel-name">${escapeHtml(ch.name)}</span>${rec}${live}<button class="channel-remove" title="삭제">×</button>`;
+    const shown = displayName(ch);
+    li.title =
+      (ch.alias ? `${shown} (원래 이름: ${ch.name})` : shown) +
+      `\n${ch.channelId}`;
+    li.innerHTML = `${img}<span class="channel-name">${escapeHtml(shown)}</span>${rec}${live}<button class="channel-remove" title="삭제">×</button>`;
     li.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).classList.contains("channel-remove")) {
         void removeChannel(ch.channelId);
@@ -166,8 +170,116 @@ function renderChannelList(): void {
         void showChannel(ch.channelId);
       }
     });
+    li.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openChannelMenu(ch.channelId, e.clientX, e.clientY);
+    });
     listEl.appendChild(li);
   }
+}
+
+// ---------- 채널 우클릭 메뉴 ----------
+
+let menuChannelId: string | null = null;
+
+function openChannelMenu(channelId: string, x: number, y: number): void {
+  const menu = document.getElementById("channel-menu")!;
+  menuChannelId = channelId;
+  const ch = getChannels().find((c) => c.channelId === channelId);
+  // 별명이 없으면 "원래 이름으로" 항목은 숨긴다
+  menu
+    .querySelector<HTMLElement>('[data-action="reset-name"]')!
+    .classList.toggle("hidden", !ch?.alias);
+
+  menu.classList.remove("hidden");
+  // 화면 밖으로 나가지 않게 위치 보정
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 8)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - rect.height - 8)}px`;
+}
+
+function closeChannelMenu(): void {
+  document.getElementById("channel-menu")!.classList.add("hidden");
+  menuChannelId = null;
+}
+
+function initChannelMenu(): void {
+  const menu = document.getElementById("channel-menu")!;
+  menu.addEventListener("click", (e) => {
+    const action = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
+      ?.dataset.action;
+    const channelId = menuChannelId;
+    closeChannelMenu();
+    if (!action || !channelId) return;
+
+    const url = `https://chzzk.naver.com/live/${channelId}`;
+    switch (action) {
+      case "open":
+        invoke("open_url", { url }).catch((err) =>
+          chatView.addSystem(`채널을 열지 못했습니다: ${err}`),
+        );
+        break;
+      case "copy":
+        navigator.clipboard
+          .writeText(url)
+          .then(() => chatView.addSystem(`채널 링크를 복사했습니다: ${url}`))
+          .catch(() => chatView.addSystem(`링크 복사에 실패했습니다: ${url}`));
+        break;
+      case "rename":
+        openRenameDialog(channelId);
+        break;
+      case "reset-name":
+        setChannelAlias(channelId, "");
+        break;
+      case "remove":
+        void removeChannel(channelId);
+        break;
+    }
+  });
+  // 바깥을 누르거나 ESC로 닫기
+  window.addEventListener("click", (e) => {
+    if (!menu.contains(e.target as Node)) closeChannelMenu();
+  });
+  window.addEventListener("blur", closeChannelMenu);
+}
+
+function setChannelAlias(channelId: string, alias: string): void {
+  const channels = getChannels().map((c) =>
+    c.channelId === channelId ? { ...c, alias: alias.trim() || undefined } : c,
+  );
+  saveChannels(channels);
+  renderChannelList();
+  if (channelId === activeChannelId) void showChannel(channelId);
+}
+
+function initRenameDialog(): void {
+  const dialog = document.getElementById("rename-modal") as HTMLDialogElement;
+  const input = document.getElementById("rename-input") as HTMLInputElement;
+  const save = () => {
+    if (renameChannelId) setChannelAlias(renameChannelId, input.value);
+    dialog.close();
+  };
+  document.getElementById("rename-close")!.addEventListener("click", () =>
+    dialog.close(),
+  );
+  document.getElementById("rename-save")!.addEventListener("click", save);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") save();
+  });
+}
+
+let renameChannelId: string | null = null;
+
+function openRenameDialog(channelId: string): void {
+  const dialog = document.getElementById("rename-modal") as HTMLDialogElement;
+  const input = document.getElementById("rename-input") as HTMLInputElement;
+  const ch = getChannels().find((c) => c.channelId === channelId);
+  renameChannelId = channelId;
+  input.value = ch?.alias ?? "";
+  input.placeholder = ch?.name ?? "채널 이름";
+  dialog.showModal();
+  input.focus();
+  input.select();
 }
 
 async function removeChannel(channelId: string): Promise<void> {
@@ -198,6 +310,7 @@ async function addChannel(input: string): Promise<void> {
       imageUrl: info.channelImageUrl,
     } satisfies SavedChannel);
     saveChannels(channels);
+    noteChannelName(channelId, info.channelName, info.channelImageUrl);
   }
   renderChannelList();
   await collector.syncChannel(channelId);
@@ -460,11 +573,47 @@ function applyAuthChange(message: string): void {
 
 // ---------- 부트스트랩 ----------
 
+/**
+ * 웹뷰 기본 동작을 앱에 맞게 바꾼다.
+ * 브라우저 우클릭 메뉴(새로 고침·인쇄 등)를 없애고,
+ * Ctrl+F는 브라우저 찾기 대신 앱 검색을 연다.
+ */
+function initWebviewBehavior(): void {
+  document.addEventListener("contextmenu", (e) => {
+    // 입력칸에서는 복사·붙여넣기 메뉴가 필요하다
+    const el = e.target as HTMLElement;
+    if (el.closest("input, textarea")) return;
+    e.preventDefault();
+  });
+
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        searchModal.open();
+      } else if (ctrl && e.key.toLowerCase() === "p") {
+        e.preventDefault(); // 인쇄 대화상자
+      } else if (e.key === "F3" || (ctrl && e.key.toLowerCase() === "g")) {
+        e.preventDefault(); // 다음 찾기
+      } else if (e.key === "F5" || (ctrl && e.key.toLowerCase() === "r")) {
+        e.preventDefault(); // 새로 고침 — 수집이 끊기므로 막는다
+      }
+    },
+    true,
+  );
+}
+
 async function main(): Promise<void> {
   await initDb();
+  await loadChannelNames();
   await initNotifications().catch(() => {});
   await refreshLoginNickname();
   initSettingsModal();
+  initWebviewBehavior();
+  initChannelMenu();
+  initRenameDialog();
   document
     .getElementById("open-search")!
     .addEventListener("click", () => searchModal.open());

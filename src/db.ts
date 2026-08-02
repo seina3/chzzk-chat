@@ -18,11 +18,19 @@ export interface StoredMessage {
   blind: string | null;
 }
 
+/** 한 유저가 썼던 닉네임과 사용 기간 */
+export interface NicknameUse {
+  nickname: string;
+  cnt: number;
+  first_seen: number;
+  last_seen: number;
+}
+
 export interface UserStats {
   count: number;
   firstSeen: number | null;
   lastSeen: number | null;
-  nicknames: string[];
+  nicknames: NicknameUse[];
   /** 이 유저의 후원 총액과 횟수 */
   donationTotal: number;
   donationCount: number;
@@ -41,6 +49,16 @@ export async function initDb(): Promise<void> {
       msg_type TEXT NOT NULL DEFAULT 'chat',
       pay_amount INTEGER,
       msg_time INTEGER NOT NULL
+    )
+  `);
+  // 채널 이름을 따로 보관한다 — 목록에서 채널을 지워도 지난 기록에
+  // 채널 ID 대신 이름이 계속 보이도록
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS channels (
+      channel_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      image_url TEXT,
+      updated_at INTEGER NOT NULL
     )
   `);
   await db.execute(
@@ -349,6 +367,102 @@ export async function getDonationList(
   );
 }
 
+// ---------- 채널 이름 보관 ----------
+
+/** 채널 이름을 기억해 둔다 (목록에서 지운 뒤에도 기록에 이름이 보이도록) */
+export function rememberChannel(
+  channelId: string,
+  name: string,
+  imageUrl?: string | null,
+): void {
+  if (!name) return;
+  writeChain = writeChain
+    .then(() =>
+      requireDb().execute(
+        `INSERT INTO channels (channel_id, name, image_url, updated_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT(channel_id) DO UPDATE SET
+           name = excluded.name,
+           image_url = COALESCE(excluded.image_url, channels.image_url),
+           updated_at = excluded.updated_at`,
+        [channelId, name, imageUrl ?? null, Date.now()],
+      ),
+    )
+    .catch((e) => console.error("채널 이름 저장 실패:", e));
+}
+
+export async function getKnownChannelNames(): Promise<Map<string, string>> {
+  const rows = await requireDb().select<
+    { channel_id: string; name: string }[]
+  >(`SELECT channel_id, name FROM channels`);
+  return new Map(rows.map((r) => [r.channel_id, r.name]));
+}
+
+// ---------- 채팅 순위 ----------
+
+export interface ChatterRank {
+  user_id_hash: string;
+  nickname: string;
+  cnt: number;
+  last_time: number;
+}
+
+/** 유저별 채팅 수 순위. 기간·채널로 거를 수 있다 */
+export async function getChattersByCount(
+  f: DonationFilter,
+  limit = 200,
+): Promise<ChatterRank[]> {
+  const params: unknown[] = [];
+  let where = "user_id_hash != 'anonymous'";
+  if (f.since > 0) {
+    params.push(f.since);
+    where += ` AND msg_time >= $${params.length}`;
+  }
+  if (f.channelId) {
+    params.push(f.channelId);
+    where += ` AND channel_id = $${params.length}`;
+  }
+  params.push(limit);
+  return requireDb().select<ChatterRank[]>(
+    `SELECT user_id_hash,
+            (SELECT nickname FROM messages m2
+             WHERE m2.user_id_hash = m.user_id_hash
+             ORDER BY m2.msg_time DESC LIMIT 1) AS nickname,
+            COUNT(*) AS cnt,
+            MAX(msg_time) AS last_time
+     FROM messages m WHERE ${where}
+     GROUP BY user_id_hash
+     ORDER BY cnt DESC
+     LIMIT $${params.length}`,
+    params,
+  );
+}
+
+export interface ChatSummary {
+  total: number;
+  chatters: number;
+}
+
+export async function getChatSummary(f: DonationFilter): Promise<ChatSummary> {
+  const params: unknown[] = [];
+  let where = "1=1";
+  if (f.since > 0) {
+    params.push(f.since);
+    where += ` AND msg_time >= $${params.length}`;
+  }
+  if (f.channelId) {
+    params.push(f.channelId);
+    where += ` AND channel_id = $${params.length}`;
+  }
+  const rows = await requireDb().select<{ total: number; chatters: number }[]>(
+    `SELECT COUNT(*) AS total,
+            COUNT(DISTINCT user_id_hash) AS chatters
+     FROM messages WHERE ${where}`,
+    params,
+  );
+  return { total: rows[0]?.total ?? 0, chatters: rows[0]?.chatters ?? 0 };
+}
+
 /**
  * 이미 저장된 메시지를 가려진 것으로 표시한다.
  * (수신 후에 운영자가 삭제·블라인드한 경우 — 기록에도 남겨 취소선으로 보이게)
@@ -390,9 +504,13 @@ export async function getUserStats(userIdHash: string): Promise<UserStats> {
      FROM messages WHERE user_id_hash = $1`,
     [userIdHash],
   );
-  const nickRows = await d.select<{ nickname: string }[]>(
-    `SELECT nickname FROM messages WHERE user_id_hash = $1
-     GROUP BY nickname ORDER BY MAX(msg_time) DESC LIMIT 10`,
+  const nickRows = await d.select<NicknameUse[]>(
+    `SELECT nickname,
+            COUNT(*) AS cnt,
+            MIN(msg_time) AS first_seen,
+            MAX(msg_time) AS last_seen
+     FROM messages WHERE user_id_hash = $1
+     GROUP BY nickname ORDER BY last_seen DESC LIMIT 50`,
     [userIdHash],
   );
   const r = rows[0];
@@ -400,7 +518,7 @@ export async function getUserStats(userIdHash: string): Promise<UserStats> {
     count: r?.cnt ?? 0,
     firstSeen: r?.first_seen ?? null,
     lastSeen: r?.last_seen ?? null,
-    nicknames: nickRows.map((n) => n.nickname),
+    nicknames: nickRows,
     donationTotal: r?.donation_total ?? 0,
     donationCount: r?.donation_count ?? 0,
   };

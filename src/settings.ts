@@ -22,8 +22,16 @@ const DEFAULT_SETTINGS: Settings = {
 
 export interface SavedChannel {
   channelId: string;
+  /** 치지직에서 가져온 원래 채널명 */
   name: string;
   imageUrl: string | null;
+  /** 사용자가 지정한 별명 — 있으면 이 이름으로 표시한다 */
+  alias?: string;
+}
+
+/** 화면에 표시할 이름 (별명이 있으면 별명) */
+export function displayName(ch: SavedChannel): string {
+  return ch.alias?.trim() || ch.name;
 }
 
 const SETTINGS_KEY = "chzzk-chat.settings";
