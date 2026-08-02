@@ -16,7 +16,9 @@
         "width": 1100,
         "height": 750,
         "minWidth": 480,
-        "minHeight": 400
+        "minHeight": 400,
+        "center": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,AutofillServerCommunication,AutofillEnableAccountWalletStorage"
       }
     ],
     "security": {

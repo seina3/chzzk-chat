@@ -329,39 +329,63 @@ async fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
-/// 채팅 한 줄을 채널별/날짜별 txt 로그 파일에 append한다.
-/// 경로: <로그 폴더>/<채널명>/<YYYY-MM-DD>.txt
+/// 파일·폴더 이름으로 쓸 수 없는 문자를 걸러낸다.
+fn sanitize_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .filter(|c| {
+            !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') && !c.is_control()
+        })
+        .collect();
+    cleaned.trim().trim_matches('.').to_string()
+}
+
+/// 채팅 한 줄을 방송 회차별 로그 파일에 append한다.
+/// 경로: <로그 폴더>/<채널명>/<파일명>
+///
+/// `header`를 주면 파일을 새로 만들 때에만 맨 앞에 한 번 써 넣는다
+/// (방송 시작 시각·제목·카테고리, csv의 열 이름 등).
+/// `line`이 비어 있으면 파일과 머리말만 만들어 둔다.
 #[tauri::command]
 async fn append_chat_log(
     app: AppHandle,
     channel: String,
-    date: String,
+    file_name: String,
+    header: Option<String>,
     line: String,
     base_dir: Option<String>,
 ) -> Result<(), String> {
     use std::io::Write;
 
-    let safe_channel: String = channel
-        .chars()
-        .filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') && !c.is_control())
-        .collect();
-    let safe_channel = safe_channel.trim().trim_matches('.').to_string();
+    let safe_channel = sanitize_name(&channel);
     if safe_channel.is_empty() {
         return Err("잘못된 채널명".into());
     }
-    if date.len() != 10 || !date.chars().all(|c| c.is_ascii_digit() || c == '-') {
-        return Err("잘못된 날짜".into());
+    let safe_file = sanitize_name(&file_name);
+    if safe_file.is_empty() || safe_file.contains("..") {
+        return Err("잘못된 파일명".into());
     }
 
     let dir = resolve_log_base(&app, &base_dir)?.join(safe_channel);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
+    let path = dir.join(safe_file);
+    let is_new = !path.exists();
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(dir.join(format!("{date}.txt")))
+        .open(&path)
         .map_err(|e| e.to_string())?;
-    writeln!(file, "{}", line.replace('\n', " ")).map_err(|e| e.to_string())?;
+    if is_new {
+        if let Some(head) = header {
+            if !head.is_empty() {
+                writeln!(file, "{head}").map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    if !line.is_empty() {
+        writeln!(file, "{}", line.replace('\n', " ")).map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

@@ -139,6 +139,15 @@ button:disabled {
   font-size: 12px;
 }
 
+.sidebar-order {
+  padding: 8px 10px 0;
+}
+
+.sidebar-order select {
+  width: 100%;
+  font-size: 12px;
+}
+
 #channel-list {
   flex: 1;
   overflow-y: auto;
@@ -165,6 +174,14 @@ button:disabled {
   background: var(--bg-hover);
   border-color: var(--border);
   box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.channel.dragging {
+  opacity: 0.4;
+}
+
+.channel.drop-target {
+  border-color: var(--accent);
 }
 
 .channel img,
@@ -513,6 +530,13 @@ button:disabled {
   color: color-mix(in srgb, var(--tier) 40%, #ffffff);
 }
 
+/* 채널이 금액을 숨긴 후원 — 액수 대신 표시만 */
+.cheese-hidden {
+  font-weight: 600;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
 /* 최신 채팅 버튼 */
 
 #scroll-bottom {
@@ -842,6 +866,29 @@ dialog::backdrop {
 
 .donation-user .nick {
   font-weight: bold;
+}
+
+/* 눌러서 파고들 수 있는 행 (채널 → 유저 순위) */
+.donation-user.clickable .nick::after {
+  content: " ›";
+  color: var(--text-dim);
+}
+
+/* 채널을 좁혀 본 상태에서 전체로 돌아가는 줄 */
+.rank-back {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--border);
+}
+
+.rank-back:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .donation-user-meta {

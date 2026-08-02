@@ -16,6 +16,8 @@ export interface StoredMessage {
   pay_amount: number | null;
   msg_time: number;
   blind: string | null;
+  /** 1이면 채널이 금액을 숨겨 액수를 알 수 없는 후원 */
+  amount_hidden: number | null;
 }
 
 /** 한 유저가 썼던 닉네임과 사용 기간 */
@@ -34,6 +36,8 @@ export interface UserStats {
   /** 이 유저의 후원 총액과 횟수 */
   donationTotal: number;
   donationCount: number;
+  /** 그중 금액이 숨겨져 액수를 알 수 없는 후원 횟수 */
+  donationHidden: number;
 }
 
 /** dbPath를 주면 그 파일을, 없으면 앱 기본 위치의 chzzk.db를 연다 */
@@ -76,6 +80,10 @@ export async function initDb(dbPath?: string): Promise<void> {
   await db
     .execute(`ALTER TABLE messages ADD COLUMN blind TEXT`)
     .catch(() => undefined);
+  // 금액 숨김 후원 표시 (기존 DB에는 없으므로 마찬가지로 무시)
+  await db
+    .execute(`ALTER TABLE messages ADD COLUMN amount_hidden INTEGER`)
+    .catch(() => undefined);
 
   // 중복 판정 기준에서 content를 뺀다.
   // 같은 메시지가 나중에 가려진 내용으로 다시 내려와도 별도 행으로 쌓이지 않고,
@@ -103,6 +111,15 @@ function requireDb(): Database {
 }
 
 /**
+ * 유저의 표시 이름을 고르는 서브쿼리 (바깥 쿼리가 messages를 m으로 별칭해야 한다).
+ * 닉네임이 비어 있는 안내 메시지 행은 건너뛰고 가장 최근에 실제로 쓰인 이름을 쓴다 —
+ * 익명의 후원자처럼 이름이 사라져 보이던 문제를 막는다.
+ */
+const LATEST_NICKNAME = `(SELECT nickname FROM messages m2
+             WHERE m2.user_id_hash = m.user_id_hash AND m2.nickname != ''
+             ORDER BY m2.msg_time DESC LIMIT 1)`;
+
+/**
  * 모든 수신 메시지를 저장. 중복 수신은 UNIQUE 인덱스로 무시되므로
  * 처음 받은 원문이 그대로 남는다 (나중에 가려진 버전이 와도 덮어쓰지 않음).
  */
@@ -112,8 +129,8 @@ export function saveMessage(m: ChatMessage): void {
       const db = requireDb();
       await db.execute(
         `INSERT OR IGNORE INTO messages
-         (channel_id, user_id_hash, nickname, content, emojis, msg_type, pay_amount, msg_time, blind)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         (channel_id, user_id_hash, nickname, content, emojis, msg_type, pay_amount, msg_time, blind, amount_hidden)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           m.channelId,
           m.userIdHash,
@@ -124,6 +141,7 @@ export function saveMessage(m: ChatMessage): void {
           m.payAmount,
           m.time,
           m.blind ?? null,
+          m.amountHidden ? 1 : null,
         ],
       );
       // 이미 저장된 메시지가 가려진 상태로 다시 온 경우: 내용은 그대로 두고
@@ -198,9 +216,7 @@ export async function searchUsers(
 ): Promise<UserSearchRow[]> {
   return requireDb().select<UserSearchRow[]>(
     `SELECT m.user_id_hash,
-            (SELECT nickname FROM messages
-             WHERE user_id_hash = m.user_id_hash
-             ORDER BY msg_time DESC LIMIT 1) AS nickname,
+            ${LATEST_NICKNAME} AS nickname,
             COUNT(*) AS cnt,
             MAX(m.msg_time) AS last_seen
      FROM messages m
@@ -248,6 +264,8 @@ export interface DonationSummary {
   total: number;
   count: number;
   donors: number;
+  /** 채널이 금액을 숨겨 액수를 알 수 없는 후원 건수 */
+  hidden: number;
 }
 
 export interface DonationByUser {
@@ -255,6 +273,7 @@ export interface DonationByUser {
   nickname: string;
   total: number;
   cnt: number;
+  hidden_cnt: number;
   last_time: number;
 }
 
@@ -278,11 +297,12 @@ export async function getDonationSummary(
   const params: unknown[] = [];
   const where = donationWhere(f, params);
   const rows = await requireDb().select<
-    { total: number | null; cnt: number; donors: number }[]
+    { total: number | null; cnt: number; donors: number; hidden: number }[]
   >(
     `SELECT COALESCE(SUM(pay_amount), 0) AS total,
             COUNT(*) AS cnt,
-            COUNT(DISTINCT user_id_hash) AS donors
+            COUNT(DISTINCT user_id_hash) AS donors,
+            SUM(CASE WHEN amount_hidden = 1 THEN 1 ELSE 0 END) AS hidden
      FROM messages WHERE ${where}`,
     params,
   );
@@ -291,6 +311,7 @@ export async function getDonationSummary(
     total: r?.total ?? 0,
     count: r?.cnt ?? 0,
     donors: r?.donors ?? 0,
+    hidden: r?.hidden ?? 0,
   };
 }
 
@@ -304,15 +325,14 @@ export async function getDonationsByUser(
   params.push(limit);
   return requireDb().select<DonationByUser[]>(
     `SELECT user_id_hash,
-            (SELECT nickname FROM messages m2
-             WHERE m2.user_id_hash = m.user_id_hash
-             ORDER BY m2.msg_time DESC LIMIT 1) AS nickname,
+            ${LATEST_NICKNAME} AS nickname,
             COALESCE(SUM(pay_amount), 0) AS total,
             COUNT(*) AS cnt,
+            SUM(CASE WHEN amount_hidden = 1 THEN 1 ELSE 0 END) AS hidden_cnt,
             MAX(msg_time) AS last_time
      FROM messages m WHERE ${where}
      GROUP BY user_id_hash
-     ORDER BY total DESC
+     ORDER BY total DESC, cnt DESC
      LIMIT $${params.length}`,
     params,
   );
@@ -323,6 +343,7 @@ export interface DonationByChannel {
   total: number;
   cnt: number;
   donors: number;
+  hidden_cnt: number;
   last_time: number;
 }
 
@@ -339,10 +360,11 @@ export async function getDonationsByChannel(
             COALESCE(SUM(pay_amount), 0) AS total,
             COUNT(*) AS cnt,
             COUNT(DISTINCT user_id_hash) AS donors,
+            SUM(CASE WHEN amount_hidden = 1 THEN 1 ELSE 0 END) AS hidden_cnt,
             MAX(msg_time) AS last_time
      FROM messages WHERE ${where}
      GROUP BY channel_id
-     ORDER BY total DESC
+     ORDER BY total DESC, cnt DESC
      LIMIT $${params.length}`,
     params,
   );
@@ -426,13 +448,47 @@ export async function getChattersByCount(
   params.push(limit);
   return requireDb().select<ChatterRank[]>(
     `SELECT user_id_hash,
-            (SELECT nickname FROM messages m2
-             WHERE m2.user_id_hash = m.user_id_hash
-             ORDER BY m2.msg_time DESC LIMIT 1) AS nickname,
+            ${LATEST_NICKNAME} AS nickname,
             COUNT(*) AS cnt,
             MAX(msg_time) AS last_time
      FROM messages m WHERE ${where}
      GROUP BY user_id_hash
+     ORDER BY cnt DESC
+     LIMIT $${params.length}`,
+    params,
+  );
+}
+
+export interface ChannelChatRank {
+  channel_id: string;
+  cnt: number;
+  chatters: number;
+  last_time: number;
+}
+
+/** 채널별 채팅 수 순위 (기간으로 거를 수 있다) */
+export async function getChatsByChannel(
+  f: DonationFilter,
+  limit = 100,
+): Promise<ChannelChatRank[]> {
+  const params: unknown[] = [];
+  let where = "1=1";
+  if (f.since > 0) {
+    params.push(f.since);
+    where += ` AND msg_time >= $${params.length}`;
+  }
+  if (f.channelId) {
+    params.push(f.channelId);
+    where += ` AND channel_id = $${params.length}`;
+  }
+  params.push(limit);
+  return requireDb().select<ChannelChatRank[]>(
+    `SELECT channel_id,
+            COUNT(*) AS cnt,
+            COUNT(DISTINCT user_id_hash) AS chatters,
+            MAX(msg_time) AS last_time
+     FROM messages WHERE ${where}
+     GROUP BY channel_id
      ORDER BY cnt DESC
      LIMIT $${params.length}`,
     params,
@@ -566,6 +622,7 @@ export async function getUserStats(userIdHash: string): Promise<UserStats> {
       last_seen: number | null;
       donation_total: number | null;
       donation_count: number;
+      donation_hidden: number;
     }[]
   >(
     `SELECT COUNT(*) AS cnt,
@@ -573,7 +630,8 @@ export async function getUserStats(userIdHash: string): Promise<UserStats> {
             MAX(msg_time) AS last_seen,
             COALESCE(SUM(CASE WHEN msg_type = 'donation' THEN pay_amount END), 0)
               AS donation_total,
-            SUM(CASE WHEN msg_type = 'donation' THEN 1 ELSE 0 END) AS donation_count
+            SUM(CASE WHEN msg_type = 'donation' THEN 1 ELSE 0 END) AS donation_count,
+            SUM(CASE WHEN amount_hidden = 1 THEN 1 ELSE 0 END) AS donation_hidden
      FROM messages WHERE user_id_hash = $1`,
     [userIdHash],
   );
@@ -594,5 +652,6 @@ export async function getUserStats(userIdHash: string): Promise<UserStats> {
     nicknames: nickRows,
     donationTotal: r?.donation_total ?? 0,
     donationCount: r?.donation_count ?? 0,
+    donationHidden: r?.donation_hidden ?? 0,
   };
 }

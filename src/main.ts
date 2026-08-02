@@ -7,7 +7,6 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import { getChannelInfo, getUserStatus, parseChannelInput } from "./chzzk/api";
-import type { ChatMessage } from "./chzzk/types";
 import { ChatCollector } from "./collector";
 import {
   getRecentMessages,
@@ -16,6 +15,7 @@ import {
   saveMessage,
 } from "./db";
 import { channelName, loadChannelNames, noteChannelName } from "./channel-names";
+import { logMessage, noteLive, resetSessions } from "./logger";
 import {
   displayName,
   getChannels,
@@ -23,6 +23,9 @@ import {
   hasAuth,
   saveChannels,
   saveSettings,
+  sortChannels,
+  type ChannelOrder,
+  type LogFormat,
   type SavedChannel,
 } from "./settings";
 import { ChatView } from "./ui/chat-view";
@@ -55,7 +58,7 @@ const statusEl = document.getElementById("conn-status")!;
 const collector = new ChatCollector({
   onMessage: (m) => {
     saveMessage(m);
-    appendTxtLog(m);
+    logMessage(m);
     if (m.channelId === activeChannelId) chatView.add(m);
   },
   onBlind: (channelId, uid, time) => {
@@ -76,6 +79,9 @@ const collector = new ChatCollector({
   },
   onLive: (channelId, live, justStarted) => {
     if (channelId === activeChannelId) dashboard.update(live);
+    // 방송 회차·제목·카테고리 변화를 로그 파일에 반영
+    noteLive(channelId, live);
+    if (live?.status === "OPEN") markChannelLive(channelId);
     if (justStarted && live) {
       const name =
         channelName(channelId);
@@ -102,52 +108,30 @@ function notifyLiveStart(name: string, title: string): void {
   sendNotification({ title: `${name} 방송 시작`, body: title || "방송이 시작되었습니다." });
 }
 
-// ---------- txt 로그 ----------
-
-// 파일 append 순서 보장을 위한 직렬화 체인
-let logChain: Promise<unknown> = Promise.resolve();
-
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-/** 채팅을 채널별/날짜별 txt 파일에 실시간 append (Chatty 로그 형식) */
-function appendTxtLog(m: ChatMessage): void {
-  if (!getSettings().logTxt) return;
-  // 재접속 시 다시 내려오는 최근 채팅은 txt에 중복 기록하지 않는다 (DB는 UNIQUE로 걸러짐)
-  if (m.isHistory) return;
-
-  const d = new Date(m.time);
-  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  const content = m.content.replace(/\{:([a-zA-Z0-9_-]+):\}/g, ":$1:");
-  const donation =
-    m.type === "donation"
-      ? ` [후원 ${(m.payAmount ?? 0).toLocaleString("ko-KR")}치즈]`
-      : "";
-  // 구독/시스템 알림은 문구에 닉네임이 이미 들어 있어 * 표시로만 기록
-  const line =
-    m.type === "subscription" || m.type === "system"
-      ? `[${time}] * ${content}`
-      : `[${time}]${donation} <${m.nickname}> ${content}`;
-  const channel = channelName(m.channelId);
-  const baseDir = getSettings().logDir || null;
-
-  logChain = logChain
-    .then(() =>
-      invoke("append_chat_log", { channel, date, line, baseDir }),
-    )
-    .catch((e) => console.error("txt 로그 저장 실패:", e));
-}
-
 // ---------- 채널 목록 ----------
+
+/** 방송 중인 것을 확인한 시각을 남긴다 ("최근 방송순" 정렬용) */
+function markChannelLive(channelId: string): void {
+  const channels = getChannels();
+  const ch = channels.find((c) => c.channelId === channelId);
+  if (!ch) return;
+  // 1분 단위로만 갱신해 localStorage 쓰기를 줄인다
+  const now = Date.now();
+  if (ch.lastLiveAt && now - ch.lastLiveAt < 60_000) return;
+  ch.lastLiveAt = now;
+  saveChannels(channels);
+}
 
 function renderChannelList(): void {
   const listEl = document.getElementById("channel-list")!;
+  const order = getSettings().channelOrder;
   listEl.innerHTML = "";
-  for (const ch of getChannels()) {
+  for (const ch of sortChannels(getChannels(), order)) {
     const li = document.createElement("li");
     li.className = ch.channelId === activeChannelId ? "channel active" : "channel";
+    li.dataset.channelId = ch.channelId;
+    // 직접 정렬일 때만 드래그로 순서를 바꿀 수 있다
+    if (order === "manual") li.draggable = true;
     const img = ch.imageUrl
       ? `<img src="${escapeHtml(ch.imageUrl)}" alt="" loading="lazy">`
       : `<span class="channel-noimg"></span>`;
@@ -161,7 +145,8 @@ function renderChannelList(): void {
     const shown = displayName(ch);
     li.title =
       (ch.alias ? `${shown} (원래 이름: ${ch.name})` : shown) +
-      `\n${ch.channelId}`;
+      `\n${ch.channelId}` +
+      (order === "manual" ? "\n드래그해서 순서를 바꿀 수 있습니다" : "");
     li.innerHTML = `${img}<span class="channel-name">${escapeHtml(shown)}</span>${rec}${live}<button class="channel-remove" title="삭제">×</button>`;
     li.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).classList.contains("channel-remove")) {
@@ -176,6 +161,67 @@ function renderChannelList(): void {
     });
     listEl.appendChild(li);
   }
+}
+
+// ---------- 채널 순서 ----------
+
+/** 드래그 중인 채널 ID */
+let dragChannelId: string | null = null;
+
+function initChannelOrder(): void {
+  const select = document.getElementById("channel-order") as HTMLSelectElement;
+  select.value = getSettings().channelOrder;
+  select.addEventListener("change", () => {
+    saveSettings({ channelOrder: select.value as ChannelOrder });
+    renderChannelList();
+  });
+
+  const listEl = document.getElementById("channel-list")!;
+
+  listEl.addEventListener("dragstart", (e) => {
+    const li = (e.target as HTMLElement).closest<HTMLElement>(".channel");
+    if (!li?.dataset.channelId) return;
+    dragChannelId = li.dataset.channelId;
+    li.classList.add("dragging");
+    e.dataTransfer?.setData("text/plain", dragChannelId);
+  });
+
+  listEl.addEventListener("dragend", () => {
+    dragChannelId = null;
+    for (const el of listEl.querySelectorAll(".drop-target, .dragging")) {
+      el.classList.remove("drop-target", "dragging");
+    }
+  });
+
+  listEl.addEventListener("dragover", (e) => {
+    if (!dragChannelId) return;
+    e.preventDefault();
+    const li = (e.target as HTMLElement).closest<HTMLElement>(".channel");
+    for (const el of listEl.querySelectorAll(".drop-target")) {
+      el.classList.remove("drop-target");
+    }
+    li?.classList.add("drop-target");
+  });
+
+  listEl.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const li = (e.target as HTMLElement).closest<HTMLElement>(".channel");
+    const target = li?.dataset.channelId;
+    const moved = dragChannelId;
+    dragChannelId = null;
+    if (!moved || !target || moved === target) {
+      renderChannelList();
+      return;
+    }
+    const channels = getChannels();
+    const from = channels.findIndex((c) => c.channelId === moved);
+    const to = channels.findIndex((c) => c.channelId === target);
+    if (from < 0 || to < 0) return;
+    const [item] = channels.splice(from, 1);
+    channels.splice(to, 0, item);
+    saveChannels(channels);
+    renderChannelList();
+  });
 }
 
 // ---------- 채널 우클릭 메뉴 ----------
@@ -417,6 +463,18 @@ function initSettingsModal(): void {
   logTxtInput.checked = getSettings().logTxt;
   logTxtInput.addEventListener("change", () => {
     saveSettings({ logTxt: logTxtInput.checked });
+    resetSessions();
+  });
+
+  // 로그 파일 형식 — 바꾸면 다음 기록부터 새 파일에 쌓인다
+  const logFormatSel = document.getElementById("set-log-format") as HTMLSelectElement;
+  logFormatSel.value = getSettings().logFormat;
+  logFormatSel.addEventListener("change", () => {
+    saveSettings({ logFormat: logFormatSel.value as LogFormat });
+    resetSessions();
+    chatView.addSystem(
+      `로그를 ${logFormatSel.value === "csv" ? "csv" : "txt"} 형식으로 저장합니다.`,
+    );
   });
 
   const notifyLiveInput = document.getElementById(
@@ -460,6 +518,7 @@ function initSettingsModal(): void {
     .catch(() => {});
   logDirInput.addEventListener("change", () => {
     saveSettings({ logDir: logDirInput.value.trim() });
+    resetSessions();
   });
   document.getElementById("log-dir-pick")!.addEventListener("click", async () => {
     const picked = await openDialog({
@@ -470,6 +529,7 @@ function initSettingsModal(): void {
     if (typeof picked === "string" && picked) {
       logDirInput.value = picked;
       saveSettings({ logDir: picked });
+      resetSessions();
     }
   });
   document.getElementById("log-dir-open")!.addEventListener("click", () => {
@@ -618,11 +678,29 @@ function applyAuthChange(message: string): void {
 // ---------- 부트스트랩 ----------
 
 /**
+ * 웹뷰가 입력칸에 "저장된 정보"(이전에 입력한 값) 목록을 띄우지 않게 한다.
+ * 자동완성을 끄는 것만으로는 부족해서, 입력칸 이름을 실행할 때마다 새로 지어
+ * 웹뷰가 예전에 저장해 둔 값과 이어 붙이지 못하게 한다.
+ */
+function suppressAutofill(): void {
+  const salt = Math.random().toString(36).slice(2, 10);
+  for (const el of document.querySelectorAll<HTMLInputElement>("input")) {
+    if (el.type === "checkbox" || el.type === "radio") continue;
+    el.autocomplete = "off";
+    el.setAttribute("autocorrect", "off");
+    el.setAttribute("autocapitalize", "off");
+    el.name = `${el.id || "f"}-${salt}`;
+  }
+}
+
+/**
  * 웹뷰 기본 동작을 앱에 맞게 바꾼다.
  * 브라우저 우클릭 메뉴(새로 고침·인쇄 등)를 없애고,
  * Ctrl+F는 브라우저 찾기 대신 앱 검색을 연다.
  */
 function initWebviewBehavior(): void {
+  suppressAutofill();
+
   document.addEventListener("contextmenu", (e) => {
     // 입력칸에서는 복사·붙여넣기 메뉴가 필요하다
     const el = e.target as HTMLElement;
@@ -665,6 +743,7 @@ async function main(): Promise<void> {
   initSettingsModal();
   initWebviewBehavior();
   initChannelMenu();
+  initChannelOrder();
   initRenameDialog();
   document
     .getElementById("open-search")!

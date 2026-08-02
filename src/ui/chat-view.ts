@@ -79,6 +79,7 @@ export class ChatView {
       subscriptionBadgeUrl: null,
       subscriptionMonth: null,
       payAmount: row.pay_amount,
+      amountHidden: row.amount_hidden === 1,
       blind: (row.blind as ChatMessage["blind"]) ?? null,
       time: row.msg_time,
       type: type === "donation" || type === "subscription" || type === "system"
@@ -121,10 +122,13 @@ export class ChatView {
     if (m.blind) row.classList.add("blinded", `blind-${m.blind}`);
     const blindTag = blindTagHtml(m.blind);
 
+    // 채널이 금액 숨기기를 켜 두면 액수 없이 후원만 알 수 있다
     const donationTag =
-      m.type === "donation" && m.payAmount !== null
-        ? `<span class="cheese">🧀 ${m.payAmount.toLocaleString("ko-KR")}</span>`
-        : "";
+      m.type !== "donation"
+        ? ""
+        : m.payAmount !== null
+          ? `<span class="cheese">🧀 ${m.payAmount.toLocaleString("ko-KR")}</span>`
+          : `<span class="cheese cheese-hidden" title="채널 설정으로 금액이 숨겨진 후원입니다">🧀 금액 숨김</span>`;
 
     row.innerHTML =
       `<span class="time">${formatTime(m.time)}</span>` +

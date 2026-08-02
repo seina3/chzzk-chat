@@ -31,8 +31,10 @@ export interface ChatMessage {
   roleCode: string;
   subscriptionBadgeUrl: string | null;
   subscriptionMonth: number | null;
-  /** 후원 치즈 수량 (후원 메시지가 아니면 null) */
+  /** 후원 치즈 수량 (후원 메시지가 아니거나 금액이 숨겨졌으면 null) */
   payAmount: number | null;
+  /** 채널이 금액 숨기기를 켜 둬 금액을 알 수 없는 후원 */
+  amountHidden?: boolean;
   time: number;
   type: MessageType;
   /** 클린봇/운영자에 의해 가려진 메시지면 그 사유 */

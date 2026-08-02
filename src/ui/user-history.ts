@@ -129,10 +129,15 @@ export class UserHistoryModal {
       ? `<br><span class="uid">익명 후원은 보낸 사람을 구분할 수 없어 전체를 합쳐 보여줍니다.</span>`
       : `<br><span class="uid">ID: ${escapeHtml(this.userIdHash)}</span>`;
 
+    const hidden =
+      s.donationHidden > 0
+        ? ` · 금액 숨김 ${formatNumber(s.donationHidden)}건`
+        : "";
+
     if (this.donationsOnly) {
       const total = `<span class="cheese">🧀 ${formatNumber(s.donationTotal)}</span>`;
       this.statsEl.innerHTML =
-        `후원 ${total} · ${formatNumber(s.donationCount)}회${uid}` +
+        `후원 ${total} · ${formatNumber(s.donationCount)}회${hidden}${uid}` +
         this.breakdownHtml() +
         aka;
       return;
@@ -146,7 +151,7 @@ export class UserHistoryModal {
     const donation =
       s.donationCount > 0
         ? ` · 후원 <span class="cheese">🧀 ${formatNumber(s.donationTotal)}</span>` +
-          ` (${formatNumber(s.donationCount)}회)`
+          ` (${formatNumber(s.donationCount)}회${hidden})`
         : "";
     this.statsEl.innerHTML =
       `총 채팅 ${formatNumber(s.count)}회${donation}${range}${uid}` +
@@ -228,9 +233,11 @@ export class UserHistoryModal {
     }
     const channelTag = `<span class="channel-tag">${escapeHtml(channelName(row.channel_id))}</span>`;
     const cheese =
-      row.msg_type === "donation" && row.pay_amount
-        ? `<span class="cheese">🧀 ${formatNumber(row.pay_amount)}</span> `
-        : "";
+      row.msg_type !== "donation"
+        ? ""
+        : row.pay_amount
+          ? `<span class="cheese">🧀 ${formatNumber(row.pay_amount)}</span> `
+          : `<span class="cheese cheese-hidden" title="채널 설정으로 금액이 숨겨진 후원입니다">🧀 금액 숨김</span> `;
     el.innerHTML =
       `<span class="time">${formatDateTime(row.msg_time)}</span>` +
       channelTag +

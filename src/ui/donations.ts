@@ -2,6 +2,7 @@ import {
   getChannelsWithData,
   getChatSummary,
   getChattersByCount,
+  getChatsByChannel,
   getDonationSummary,
   getDonationsByChannel,
   getDonationsByUser,
@@ -24,10 +25,21 @@ type Tab = "user" | "channel" | "chatter";
 
 const DAY_MS = 86_400_000;
 
+/** 목록에 보여줄 이름 — 익명 후원처럼 닉네임이 없는 경우를 메운다 */
+function displayNick(userIdHash: string, nickname: string | null): string {
+  if (nickname && nickname.trim()) return nickname;
+  return userIdHash === "anonymous" ? "익명의 후원자" : "(알 수 없음)";
+}
+
+/** 금액을 숨긴 채널의 후원은 액수를 알 수 없어 건수만 따로 적는다 */
+function hiddenNote(cnt: number | null | undefined): string {
+  return cnt ? ` · 금액 숨김 ${formatNumber(cnt)}건` : "";
+}
+
 /**
  * 집계 모달.
  * 기간(1일/7일/30일/전체)과 채널로 걸러, 후원 총액과 함께
- * 유저별·채널별 후원 순위와 유저별 채팅 순위를 보여준다.
+ * 유저별·채널별 후원 순위와 채널별·유저별 채팅 순위를 보여준다.
  */
 export class DonationsModal {
   private dialog: HTMLDialogElement;
@@ -80,7 +92,15 @@ export class DonationsModal {
     this.channelSel.addEventListener("change", () => void this.reload());
 
     this.resultsEl.addEventListener("click", (e) => {
-      const el = (e.target as HTMLElement).closest<HTMLElement>("[data-uid]");
+      const target = e.target as HTMLElement;
+      // 채널 행을 누르면 그 채널로 좁혀 유저 순위로 파고든다
+      const chan = target.closest<HTMLElement>("[data-channel]");
+      if (chan?.dataset.channel !== undefined) {
+        this.channelSel.value = chan.dataset.channel;
+        void this.reload();
+        return;
+      }
+      const el = target.closest<HTMLElement>("[data-uid]");
       if (el?.dataset.uid) {
         this.onUserClick(
           el.dataset.uid,
@@ -163,7 +183,8 @@ export class DonationsModal {
       const s = await getDonationSummary(f);
       this.summaryEl.innerHTML =
         `<div class="donation-total">🧀 ${formatNumber(s.total)}</div>` +
-        `<div class="donation-sub">${label} · 후원 ${formatNumber(s.count)}건 · 후원자 ${formatNumber(s.donors)}명</div>` +
+        `<div class="donation-sub">${label} · 후원 ${formatNumber(s.count)}건 · 후원자 ${formatNumber(s.donors)}명` +
+        `${hiddenNote(s.hidden)}</div>` +
         `<div class="chart-slot"></div>`;
     }
     await this.drawChart(f);
@@ -172,9 +193,21 @@ export class DonationsModal {
       await this.loadUsers();
     } else if (this.tab === "channel") {
       await this.loadChannels();
-    } else {
+    } else if (this.channelSel.value) {
+      // 채널이 정해져 있으면 곧바로 그 채널의 유저 순위
       await this.loadChatters();
+    } else {
+      await this.loadChatChannels();
     }
+  }
+
+  /** 채널을 좁혀 본 상태에서 전체로 돌아가는 줄 */
+  private backRow(): void {
+    const el = document.createElement("button");
+    el.className = "rank-back";
+    el.dataset.channel = "";
+    el.textContent = `← 전체 채널 · 지금은 ${channelName(this.channelSel.value)}`;
+    this.resultsEl.appendChild(el);
   }
 
   /** 선택한 기간의 추이 그래프 (1일은 시간별, 그 외는 날짜별) */
@@ -231,14 +264,15 @@ export class DonationsModal {
     let rank = 0;
     for (const row of rows) {
       rank += 1;
+      const nick = displayNick(row.user_id_hash, row.nickname);
       const el = document.createElement("div");
       el.className = "donation-user";
       el.dataset.uid = row.user_id_hash;
-      el.dataset.nick = row.nickname ?? "";
+      el.dataset.nick = nick;
       el.innerHTML =
         `<span class="rank">${rank}</span>` +
-        `<span class="nick" style="color:${nickColor(row.user_id_hash)}">${escapeHtml(row.nickname ?? "(알 수 없음)")}</span>` +
-        `<span class="donation-user-meta">${formatNumber(row.cnt)}회 · 마지막 ${formatDateTime(row.last_time)}</span>` +
+        `<span class="nick" style="color:${nickColor(row.user_id_hash)}">${escapeHtml(nick)}</span>` +
+        `<span class="donation-user-meta">${formatNumber(row.cnt)}회${hiddenNote(row.hidden_cnt)} · 마지막 ${formatDateTime(row.last_time)}</span>` +
         `<span class="donation-user-total ${donationTierClass(row.total)}">🧀 ${formatNumber(row.total)}</span>`;
       this.resultsEl.appendChild(el);
     }
@@ -268,8 +302,40 @@ export class DonationsModal {
       el.innerHTML =
         `<span class="rank">${rank}</span>` +
         `<span class="nick">${escapeHtml(name)}</span>` +
-        `<span class="donation-user-meta">${formatNumber(row.cnt)}회 · 후원자 ${formatNumber(row.donors)}명 · 마지막 ${formatDateTime(row.last_time)}</span>` +
+        `<span class="donation-user-meta">${formatNumber(row.cnt)}회 · 후원자 ${formatNumber(row.donors)}명${hiddenNote(row.hidden_cnt)} · 마지막 ${formatDateTime(row.last_time)}</span>` +
         `<span class="donation-user-total ${donationTierClass(row.total)}">🧀 ${formatNumber(row.total)}</span>`;
+      this.resultsEl.appendChild(el);
+    }
+  }
+
+  /** 채널별 채팅 수 순위 — 채널을 누르면 그 채널의 유저 순위로 들어간다 */
+  private async loadChatChannels(): Promise<void> {
+    const rows = await getChatsByChannel(this.filter());
+    if (this.tab !== "chatter" || this.channelSel.value) return;
+    if (rows.length === 0) {
+      this.empty("해당 기간에 채팅 기록이 없습니다.");
+      return;
+    }
+    void resolveUnknownChannelNames(rows.map((r) => r.channel_id)).then(
+      (changed) => {
+        if (changed && this.tab === "chatter" && !this.channelSel.value) {
+          void this.reload();
+        }
+      },
+    );
+
+    let rank = 0;
+    for (const row of rows) {
+      rank += 1;
+      const el = document.createElement("div");
+      el.className = "donation-user clickable";
+      el.dataset.channel = row.channel_id;
+      el.title = "누르면 이 채널의 유저 순위를 봅니다";
+      el.innerHTML =
+        `<span class="rank">${rank}</span>` +
+        `<span class="nick">${escapeHtml(channelName(row.channel_id))}</span>` +
+        `<span class="donation-user-meta">참여자 ${formatNumber(row.chatters)}명 · 마지막 ${formatDateTime(row.last_time)}</span>` +
+        `<span class="donation-user-total chat-count">💬 ${formatNumber(row.cnt)}</span>`;
       this.resultsEl.appendChild(el);
     }
   }
@@ -278,6 +344,7 @@ export class DonationsModal {
   private async loadChatters(): Promise<void> {
     const rows = await getChattersByCount(this.filter());
     if (this.tab !== "chatter") return;
+    if (this.channelSel.value) this.backRow();
     if (rows.length === 0) {
       this.empty("해당 기간에 채팅 기록이 없습니다.");
       return;
@@ -285,13 +352,14 @@ export class DonationsModal {
     let rank = 0;
     for (const row of rows) {
       rank += 1;
+      const nick = displayNick(row.user_id_hash, row.nickname);
       const el = document.createElement("div");
       el.className = "donation-user";
       el.dataset.uid = row.user_id_hash;
-      el.dataset.nick = row.nickname ?? "";
+      el.dataset.nick = nick;
       el.innerHTML =
         `<span class="rank">${rank}</span>` +
-        `<span class="nick" style="color:${nickColor(row.user_id_hash)}">${escapeHtml(row.nickname ?? "(알 수 없음)")}</span>` +
+        `<span class="nick" style="color:${nickColor(row.user_id_hash)}">${escapeHtml(nick)}</span>` +
         `<span class="donation-user-meta">마지막 ${formatDateTime(row.last_time)}</span>` +
         `<span class="donation-user-total chat-count">💬 ${formatNumber(row.cnt)}</span>`;
       this.resultsEl.appendChild(el);

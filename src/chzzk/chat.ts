@@ -343,12 +343,22 @@ export class ChzzkChat {
     const typeCode: number = raw.msgTypeCode ?? raw.messageTypeCode ?? 1;
     const payAmount = Number(extras?.payAmount ?? 0);
     const hasPay = Number.isFinite(payAmount) && payAmount > 0;
+    // 채널이 "금액 숨기기"를 켜면 후원이 금액 없이 내려온다.
+    // 안내 메시지(채팅 제한 등)와 구분하려면 후원 전용 필드가 있는지 본다.
+    const donationFields =
+      extras?.donationType !== undefined ||
+      extras?.isAnonymous !== undefined ||
+      extras?.payType !== undefined ||
+      extras?.donationUserWeeklyRank !== undefined;
 
     const isSubscription =
       typeCode === MSG_TYPE.subscription || extras?.month !== undefined;
-    // 금액 없는 후원은 존재하지 않는다 — 금액이 없으면 안내 메시지로 본다
     const isDonation =
-      !isSubscription && hasPay && (isDonationCmd || typeCode === MSG_TYPE.donation);
+      !isSubscription &&
+      (hasPay || donationFields) &&
+      (isDonationCmd || typeCode === MSG_TYPE.donation);
+    // 금액을 알 수 없는 후원 — 건수만 따로 집계한다
+    const amountHidden = isDonation && !hasPay;
     const isSystem =
       !isSubscription &&
       !isDonation &&
@@ -402,7 +412,8 @@ export class ChzzkChat {
       subscriptionBadgeUrl: sub?.badge?.imageUrl ?? null,
       subscriptionMonth: sub?.accumulativeMonth ?? extras?.month ?? null,
       // 구독·안내는 금액이 아니므로 후원 집계에 섞이지 않게 null로 둔다
-      payAmount: isDonation ? payAmount : null,
+      payAmount: isDonation && !amountHidden ? payAmount : null,
+      amountHidden,
       time,
       type,
       blind,

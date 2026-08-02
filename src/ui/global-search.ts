@@ -152,9 +152,11 @@ export class GlobalSearchModal {
     }
     const channelTag = `<span class="channel-tag">${escapeHtml(channelName(row.channel_id))}</span>`;
     const cheese =
-      row.msg_type === "donation" && row.pay_amount
-        ? `<span class="cheese">🧀 ${formatNumber(row.pay_amount)}</span> `
-        : "";
+      row.msg_type !== "donation"
+        ? ""
+        : row.pay_amount
+          ? `<span class="cheese">🧀 ${formatNumber(row.pay_amount)}</span> `
+          : `<span class="cheese cheese-hidden" title="채널 설정으로 금액이 숨겨진 후원입니다">🧀 금액 숨김</span> `;
     el.innerHTML =
       `<span class="time">${formatDateTime(row.msg_time)}</span>` +
       channelTag +

@@ -10,13 +10,20 @@
     <div id="app">
       <aside id="sidebar">
         <div class="sidebar-header">
-          <input id="channel-input" placeholder="채널 URL 또는 ID" spellcheck="false" />
+          <input id="channel-input" placeholder="채널 URL 또는 ID" spellcheck="false" autocomplete="off" />
           <button id="add-channel">추가</button>
+        </div>
+        <div class="sidebar-order">
+          <select id="channel-order" title="채널 목록 정렬">
+            <option value="manual">직접 정렬 (드래그)</option>
+            <option value="name">가나다순</option>
+            <option value="recent">최근 방송순</option>
+          </select>
         </div>
         <ul id="channel-list"></ul>
         <div class="sidebar-footer">
           <button id="open-search">🔍 검색</button>
-          <button id="open-donations">🧀 후원</button>
+          <button id="open-donations">📊 집계</button>
           <button id="open-settings">⚙ 설정</button>
         </div>
       </aside>
@@ -46,7 +53,7 @@
         <div id="status-bar"><span id="conn-status"></span></div>
 
         <div id="chat-input-row">
-          <input id="chat-input" disabled />
+          <input id="chat-input" disabled autocomplete="off" spellcheck="false" />
           <button id="send-btn" disabled>전송</button>
         </div>
       </main>
@@ -147,13 +154,22 @@
       </label>
       <label class="checkbox-row">
         <input type="checkbox" id="set-log-txt" />
-        <span>채팅을 txt 파일로도 실시간 저장 — 채널명/날짜.txt</span>
+        <span>채팅을 파일로도 실시간 저장 — 채널명/방송시작시각 파일</span>
       </label>
       <div class="log-dir-row">
-        <input id="set-log-dir" spellcheck="false" />
+        <select id="set-log-format" title="로그 파일 형식">
+          <option value="txt">txt (읽기 좋음)</option>
+          <option value="csv">csv (통계·공유용)</option>
+        </select>
+        <input id="set-log-dir" spellcheck="false" autocomplete="off" />
         <button id="log-dir-pick">폴더 선택</button>
         <button id="log-dir-open" title="로그 폴더를 탐색기에서 열기">열기</button>
       </div>
+      <p class="settings-help">
+        방송이 시작될 때마다 새 파일을 만들고, 맨 앞에 방송 시작 시각·제목·카테고리를 적습니다.
+        방송 중 제목이나 카테고리가 바뀌면 그 시각과 함께 이어서 기록합니다.
+        csv는 엑셀·스프레드시트에서 바로 통계를 내기 좋습니다.
+      </p>
       <label class="dir-label">채팅 DB 저장 폴더</label>
       <div class="log-dir-row">
         <input id="set-db-dir" spellcheck="false" />
