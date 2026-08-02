@@ -1,12 +1,15 @@
 import {
+  getChannelsWithData,
   getChatSummary,
   getChattersByCount,
   getDonationSummary,
   getDonationsByChannel,
   getDonationsByUser,
+  getTimeSeries,
   type DonationFilter,
 } from "../db";
-import { channelName } from "../channel-names";
+import { barChartHtml } from "./chart";
+import { channelName, resolveUnknownChannelNames } from "../channel-names";
 import { getChannels } from "../settings";
 import {
   donationTierClass,
@@ -89,19 +92,28 @@ export class DonationsModal {
   }
 
   open(): void {
-    this.fillChannels();
     this.syncButtons();
     this.dialog.showModal();
+    void this.fillChannels();
     void this.reload();
   }
 
-  private fillChannels(): void {
+  /** 등록된 채널 + 기록만 남은 채널(목록에서 지운 채널)까지 모두 고른다 */
+  private async fillChannels(): Promise<void> {
     const current = this.channelSel.value;
+    const registered = getChannels().map((c) => c.channelId);
+    const withData = await getChannelsWithData().catch(() => []);
+    const ids = [...new Set([...registered, ...withData])];
+    await resolveUnknownChannelNames(ids).catch(() => false);
+
     this.channelSel.innerHTML = `<option value="">전체 채널</option>`;
-    for (const ch of getChannels()) {
+    for (const id of ids) {
       const opt = document.createElement("option");
-      opt.value = ch.channelId;
-      opt.textContent = channelName(ch.channelId);
+      opt.value = id;
+      const removed = !registered.includes(id);
+      opt.textContent = removed
+        ? `${channelName(id)} (삭제됨)`
+        : channelName(id);
       this.channelSel.appendChild(opt);
     }
     this.channelSel.value = current;
@@ -141,16 +153,19 @@ export class DonationsModal {
     }[this.period];
 
     // 요약은 보고 있는 탭에 맞춰 후원 총액 또는 채팅 수를 보여준다
+    const chart = await this.chartHtml(f);
     if (this.tab === "chatter") {
       const c = await getChatSummary(f);
       this.summaryEl.innerHTML =
         `<div class="donation-total chat-total">💬 ${formatNumber(c.total)}</div>` +
-        `<div class="donation-sub">${label} · 채팅 ${formatNumber(c.total)}개 · 참여자 ${formatNumber(c.chatters)}명</div>`;
+        `<div class="donation-sub">${label} · 채팅 ${formatNumber(c.total)}개 · 참여자 ${formatNumber(c.chatters)}명</div>` +
+        chart;
     } else {
       const s = await getDonationSummary(f);
       this.summaryEl.innerHTML =
         `<div class="donation-total">🧀 ${formatNumber(s.total)}</div>` +
-        `<div class="donation-sub">${label} · 후원 ${formatNumber(s.count)}건 · 후원자 ${formatNumber(s.donors)}명</div>`;
+        `<div class="donation-sub">${label} · 후원 ${formatNumber(s.count)}건 · 후원자 ${formatNumber(s.donors)}명</div>` +
+        chart;
     }
 
     if (this.tab === "user") {
@@ -160,6 +175,39 @@ export class DonationsModal {
     } else {
       await this.loadChatters();
     }
+  }
+
+  /** 선택한 기간의 추이 그래프 (1일은 시간별, 그 외는 날짜별) */
+  private async chartHtml(f: DonationFilter): Promise<string> {
+    const donations = this.tab !== "chatter";
+    const hourly = this.period === "1d";
+    const bucketMs = hourly ? 3_600_000 : DAY_MS;
+
+    // 전체 기간이면 가장 오래된 기록부터, 아니면 기간 시작부터
+    let from = f.since;
+    if (from === 0) {
+      const rows = await getTimeSeries(f, bucketMs, donations);
+      if (rows.length === 0) return "";
+      from = rows[0].bucket * bucketMs;
+    }
+    const rows = await getTimeSeries(f, bucketMs, donations);
+    if (rows.length === 0) return "";
+
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return barChartHtml(rows, {
+      bucketMs,
+      from,
+      to: Date.now(),
+      metric: donations ? "total" : "cnt",
+      color: donations ? "#ffc44d" : "#00e6a1",
+      unit: donations ? "🧀 " : "💬 ",
+      label: (t) => {
+        const d = new Date(t);
+        return hourly
+          ? `${pad(d.getHours())}시`
+          : `${d.getMonth() + 1}/${d.getDate()}`;
+      },
+    });
   }
 
   private empty(text: string): void {
@@ -200,6 +248,13 @@ export class DonationsModal {
       this.empty("해당 기간에 후원 기록이 없습니다.");
       return;
     }
+    // 목록에서 지워 이름을 모르는 채널은 치지직에서 이름을 받아온다
+    void resolveUnknownChannelNames(rows.map((r) => r.channel_id)).then(
+      (changed) => {
+        if (changed && this.tab === "channel") void this.reload();
+      },
+    );
+
     let rank = 0;
     for (const row of rows) {
       rank += 1;

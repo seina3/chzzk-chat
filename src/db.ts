@@ -463,6 +463,77 @@ export async function getChatSummary(f: DonationFilter): Promise<ChatSummary> {
   return { total: rows[0]?.total ?? 0, chatters: rows[0]?.chatters ?? 0 };
 }
 
+/** 기록이 남아 있는 모든 채널 ID (목록에서 지운 채널도 포함) */
+export async function getChannelsWithData(): Promise<string[]> {
+  const rows = await requireDb().select<{ channel_id: string }[]>(
+    `SELECT channel_id, MAX(msg_time) AS last_time
+     FROM messages GROUP BY channel_id ORDER BY last_time DESC`,
+  );
+  return rows.map((r) => r.channel_id);
+}
+
+/** 한 유저(또는 익명)의 채널별 분포 */
+export interface UserChannelBreakdown {
+  channel_id: string;
+  cnt: number;
+  total: number;
+}
+
+export async function getUserChannelBreakdown(
+  userIdHash: string,
+  donationsOnly: boolean,
+): Promise<UserChannelBreakdown[]> {
+  const where = donationsOnly
+    ? "user_id_hash = $1 AND msg_type = 'donation'"
+    : "user_id_hash = $1";
+  return requireDb().select<UserChannelBreakdown[]>(
+    `SELECT channel_id,
+            COUNT(*) AS cnt,
+            COALESCE(SUM(pay_amount), 0) AS total
+     FROM messages WHERE ${where}
+     GROUP BY channel_id
+     ORDER BY ${donationsOnly ? "total" : "cnt"} DESC`,
+    [userIdHash],
+  );
+}
+
+// ---------- 추이 (그래프용) ----------
+
+export interface TimeBucket {
+  bucket: number;
+  cnt: number;
+  total: number;
+}
+
+/**
+ * 기간을 일정 간격으로 나눠 채팅 수와 후원 금액을 집계한다.
+ * bucketMs 단위로 묶으며, donationsOnly면 후원만 센다.
+ */
+export async function getTimeSeries(
+  f: DonationFilter,
+  bucketMs: number,
+  donationsOnly: boolean,
+): Promise<TimeBucket[]> {
+  const params: unknown[] = [bucketMs];
+  let where = donationsOnly ? "msg_type = 'donation'" : "1=1";
+  if (f.since > 0) {
+    params.push(f.since);
+    where += ` AND msg_time >= $${params.length}`;
+  }
+  if (f.channelId) {
+    params.push(f.channelId);
+    where += ` AND channel_id = $${params.length}`;
+  }
+  return requireDb().select<TimeBucket[]>(
+    `SELECT (msg_time / $1) AS bucket,
+            COUNT(*) AS cnt,
+            COALESCE(SUM(pay_amount), 0) AS total
+     FROM messages WHERE ${where}
+     GROUP BY bucket ORDER BY bucket`,
+    params,
+  );
+}
+
 /**
  * 이미 저장된 메시지를 가려진 것으로 표시한다.
  * (수신 후에 운영자가 삭제·블라인드한 경우 — 기록에도 남겨 취소선으로 보이게)

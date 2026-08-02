@@ -1,7 +1,9 @@
 import {
+  getUserChannelBreakdown,
   getUserMessages,
   getUserStats,
   type StoredMessage,
+  type UserChannelBreakdown,
   type UserStats,
 } from "../db";
 import { channelName } from "../channel-names";
@@ -33,6 +35,7 @@ export class UserHistoryModal {
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private donationsOnly = false;
   private stats: UserStats | null = null;
+  private breakdown: UserChannelBreakdown[] = [];
 
   constructor() {
     this.dialog = document.getElementById("user-modal") as HTMLDialogElement;
@@ -56,7 +59,7 @@ export class UserHistoryModal {
         this.searchInput.placeholder = this.donationsOnly
           ? "후원 메시지 내용 검색…"
           : "메시지 내용 검색…";
-        this.renderStats();
+        void this.loadBreakdown().then(() => this.renderStats());
         void this.reload();
       });
     }
@@ -87,8 +90,17 @@ export class UserHistoryModal {
     this.dialog.showModal();
 
     this.stats = await getUserStats(userIdHash);
+    await this.loadBreakdown();
     this.renderStats();
     await this.reload();
+  }
+
+  /** 채널별 분포 — 익명 후원처럼 사람을 구분할 수 없을 때 특히 유용 */
+  private async loadBreakdown(): Promise<void> {
+    this.breakdown = await getUserChannelBreakdown(
+      this.userIdHash,
+      this.donationsOnly,
+    ).catch(() => []);
   }
 
   /** 상단 요약은 지금 보고 있는 탭에 맞춰 보여준다 */
@@ -120,7 +132,9 @@ export class UserHistoryModal {
     if (this.donationsOnly) {
       const total = `<span class="cheese">🧀 ${formatNumber(s.donationTotal)}</span>`;
       this.statsEl.innerHTML =
-        `후원 ${total} · ${formatNumber(s.donationCount)}회${uid}${aka}`;
+        `후원 ${total} · ${formatNumber(s.donationCount)}회${uid}` +
+        this.breakdownHtml() +
+        aka;
       return;
     }
 
@@ -135,7 +149,30 @@ export class UserHistoryModal {
           ` (${formatNumber(s.donationCount)}회)`
         : "";
     this.statsEl.innerHTML =
-      `총 채팅 ${formatNumber(s.count)}회${donation}${range}${uid}${aka}`;
+      `총 채팅 ${formatNumber(s.count)}회${donation}${range}${uid}` +
+      this.breakdownHtml() +
+      aka;
+  }
+
+  /** 채널별 분포 칩 — 어느 채널에서 얼마나 나왔는지 */
+  private breakdownHtml(): string {
+    if (this.breakdown.length === 0) return "";
+    const chips = this.breakdown
+      .map((b) => {
+        const amount = this.donationsOnly
+          ? `🧀 ${formatNumber(b.total)}`
+          : `${formatNumber(b.cnt)}회`;
+        const extra = this.donationsOnly ? ` (${formatNumber(b.cnt)}회)` : "";
+        return (
+          `<span class="breakdown-chip">` +
+          `<span class="channel-tag">${escapeHtml(channelName(b.channel_id))}</span>` +
+          `<span class="breakdown-amount">${amount}${extra}</span>` +
+          `</span>`
+        );
+      })
+      .join("");
+    const title = this.donationsOnly ? "채널별 후원" : "채널별 채팅";
+    return `<div class="breakdown"><span class="breakdown-title">${title}</span>${chips}</div>`;
   }
 
   private syncTabs(): void {
