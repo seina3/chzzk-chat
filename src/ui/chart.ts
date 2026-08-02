@@ -106,8 +106,7 @@ export function renderChart(
       const v = values[i];
       tip.innerHTML =
         `<div class="chart-tip-time">${escapeHtml(o.tipLabel(v.time))}</div>` +
-        `<div class="chart-tip-value"><span class="chart-tip-dot" style="background:${o.color}"></span>` +
-        `${o.unit}${formatNumber(v.value)}</div>`;
+        `<div class="chart-tip-value">${o.unit}${formatNumber(v.value)}</div>`;
     }
     // 안내선과 말풍선을 마우스 위치로 옮긴다
     const x = ((i + 0.5) / count) * box.width;

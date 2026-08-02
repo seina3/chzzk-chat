@@ -1074,7 +1074,11 @@ dialog::backdrop {
 /* 막대가 작아도 짚기 쉽도록 열 전체가 마우스에 반응한다 */
 .chart-plot {
   position: relative;
-  cursor: crosshair;
+  /* 기본 십자 커서가 커서, 60% 크기(12px)로 직접 그려 쓴다 */
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Cpath d='M6 0v12M0 6h12' stroke='%23000' stroke-width='2.5' opacity='.5'/%3E%3Cpath d='M6 0v12M0 6h12' stroke='%23fff' stroke-width='1'/%3E%3C/svg%3E")
+      6 6,
+    crosshair;
 }
 
 .chart-plot svg {
@@ -1114,18 +1118,8 @@ dialog::backdrop {
 }
 
 .chart-tip-value {
-  display: flex;
-  align-items: center;
-  gap: 5px;
   font-size: 12px;
   font-weight: bold;
-}
-
-.chart-tip-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  display: inline-block;
 }
 
 .chart-axis {
