@@ -244,6 +244,70 @@ async fn open_log_dir(app: AppHandle, base_dir: Option<String>) -> Result<(), St
     Ok(())
 }
 
+/// tauri-plugin-sql이 상대 경로를 붙이는 기준 폴더 (기본 DB 위치)
+fn default_db_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?
+        .join("chzzk.db"))
+}
+
+#[tauri::command]
+async fn get_default_db_path(app: AppHandle) -> Result<String, String> {
+    Ok(default_db_path(&app)?.to_string_lossy().into_owned())
+}
+
+/// DB를 둘 폴더를 준비한다.
+/// 새 위치에 파일이 없고 지금 쓰는 DB가 있으면 그대로 복사해 기록을 이어간다.
+/// 반환값은 앞으로 열어야 할 DB 파일 경로.
+#[tauri::command]
+async fn prepare_db_dir(
+    app: AppHandle,
+    dir: Option<String>,
+    current: Option<String>,
+) -> Result<String, String> {
+    let target = match dir.as_deref().map(str::trim) {
+        Some(d) if !d.is_empty() => {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+            std::path::PathBuf::from(d).join("chzzk.db")
+        }
+        _ => default_db_path(&app)?,
+    };
+
+    let from = match current.as_deref().map(str::trim) {
+        Some(c) if !c.is_empty() => std::path::PathBuf::from(c),
+        _ => default_db_path(&app)?,
+    };
+    if from != target && from.exists() && !target.exists() {
+        std::fs::copy(&from, &target).map_err(|e| format!("DB 복사 실패: {e}"))?;
+    }
+    Ok(target.to_string_lossy().into_owned())
+}
+
+/// 폴더를 OS 파일 탐색기로 연다.
+#[tauri::command]
+async fn open_dir(path: String) -> Result<(), String> {
+    let dir = std::path::PathBuf::from(&path);
+    let dir = if dir.is_file() {
+        dir.parent().map(|p| p.to_path_buf()).unwrap_or(dir)
+    } else {
+        dir
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    let opener = "explorer";
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let opener = "xdg-open";
+    std::process::Command::new(opener)
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 치지직 페이지를 기본 브라우저로 연다 (채널 우클릭 → 채널 열기).
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
@@ -338,7 +402,10 @@ pub fn run() {
             chzzk_get,
             get_default_log_dir,
             open_log_dir,
-            open_url
+            open_url,
+            get_default_db_path,
+            prepare_db_dir,
+            open_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

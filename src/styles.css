@@ -1170,3 +1170,10 @@ dialog::backdrop {
   color: var(--text);
   font-weight: bold;
 }
+
+.dir-label {
+  display: block;
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-top: 4px;
+}

@@ -36,8 +36,9 @@ export interface UserStats {
   donationCount: number;
 }
 
-export async function initDb(): Promise<void> {
-  db = await Database.load("sqlite:chzzk.db");
+/** dbPath를 주면 그 파일을, 없으면 앱 기본 위치의 chzzk.db를 연다 */
+export async function initDb(dbPath?: string): Promise<void> {
+  db = await Database.load(dbPath ? `sqlite:${dbPath}` : "sqlite:chzzk.db");
   await db.execute(`
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

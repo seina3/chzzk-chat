@@ -478,6 +478,50 @@ function initSettingsModal(): void {
     );
   });
 
+  // 채팅 DB 저장 폴더
+  const dbDirInput = document.getElementById("set-db-dir") as HTMLInputElement;
+  dbDirInput.value = getSettings().dbDir;
+  void invoke<string>("get_default_db_path")
+    .then((p) => (dbDirInput.placeholder = `(기본) ${p}`))
+    .catch(() => {});
+
+  /** 폴더를 바꾸면 지금 DB를 새 위치로 복사해 두고, 재시작 후 적용된다 */
+  const applyDbDir = async (dir: string) => {
+    const before = getSettings().dbDir;
+    if (dir === before) return;
+    try {
+      const target = await invoke<string>("prepare_db_dir", {
+        dir: dir || null,
+        current: currentDbPath,
+      });
+      saveSettings({ dbDir: dir });
+      dbDirInput.value = dir;
+      chatView.addSystem(
+        `DB 위치를 ${target} 으로 정했습니다. 앱을 다시 시작하면 적용됩니다.`,
+      );
+    } catch (e) {
+      chatView.addSystem(`DB 폴더 변경 실패: ${e}`);
+      dbDirInput.value = before;
+    }
+  };
+
+  dbDirInput.addEventListener("change", () => {
+    void applyDbDir(dbDirInput.value.trim());
+  });
+  document.getElementById("db-dir-pick")!.addEventListener("click", async () => {
+    const picked = await openDialog({
+      directory: true,
+      title: "채팅 DB를 둘 폴더 선택",
+      defaultPath: getSettings().dbDir || undefined,
+    }).catch(() => null);
+    if (typeof picked === "string" && picked) await applyDbDir(picked);
+  });
+  document.getElementById("db-dir-open")!.addEventListener("click", () => {
+    invoke("open_dir", { path: currentDbPath }).catch((e) =>
+      chatView.addSystem(`폴더 열기 실패: ${e}`),
+    );
+  });
+
   /** 로그인 상태에 따라 상태 문구/버튼 표시를 갱신 (닉네임 확인 포함) */
   const refreshStatus = async () => {
     if (!hasAuth()) {
@@ -605,8 +649,16 @@ function initWebviewBehavior(): void {
   );
 }
 
+/** 지금 열려 있는 DB 파일 경로 (설정 표시·복사에 사용) */
+let currentDbPath = "";
+
 async function main(): Promise<void> {
-  await initDb();
+  // 설정된 폴더가 있으면 그곳의 DB를 연다
+  currentDbPath = await invoke<string>("prepare_db_dir", {
+    dir: getSettings().dbDir || null,
+    current: null,
+  }).catch(() => "");
+  await initDb(currentDbPath || undefined);
   await loadChannelNames();
   await initNotifications().catch(() => {});
   await refreshLoginNickname();

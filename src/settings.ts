@@ -9,6 +9,8 @@ export interface Settings {
   collectAll: boolean;
   /** 방송 시작 시 OS 알림 표시 */
   notifyLive: boolean;
+  /** 채팅 DB를 둘 폴더. 빈 문자열이면 앱 기본 위치 */
+  dbDir: string;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -18,6 +20,7 @@ const DEFAULT_SETTINGS: Settings = {
   logDir: "",
   collectAll: true,
   notifyLive: true,
+  dbDir: "",
 };
 
 export interface SavedChannel {
