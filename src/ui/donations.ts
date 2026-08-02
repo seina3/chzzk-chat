@@ -8,7 +8,7 @@ import {
   getTimeSeries,
   type DonationFilter,
 } from "../db";
-import { barChartHtml } from "./chart";
+import { renderChart } from "./chart";
 import { channelName, resolveUnknownChannelNames } from "../channel-names";
 import { getChannels } from "../settings";
 import {
@@ -153,20 +153,20 @@ export class DonationsModal {
     }[this.period];
 
     // 요약은 보고 있는 탭에 맞춰 후원 총액 또는 채팅 수를 보여준다
-    const chart = await this.chartHtml(f);
     if (this.tab === "chatter") {
       const c = await getChatSummary(f);
       this.summaryEl.innerHTML =
         `<div class="donation-total chat-total">💬 ${formatNumber(c.total)}</div>` +
         `<div class="donation-sub">${label} · 채팅 ${formatNumber(c.total)}개 · 참여자 ${formatNumber(c.chatters)}명</div>` +
-        chart;
+        `<div class="chart-slot"></div>`;
     } else {
       const s = await getDonationSummary(f);
       this.summaryEl.innerHTML =
         `<div class="donation-total">🧀 ${formatNumber(s.total)}</div>` +
         `<div class="donation-sub">${label} · 후원 ${formatNumber(s.count)}건 · 후원자 ${formatNumber(s.donors)}명</div>` +
-        chart;
+        `<div class="chart-slot"></div>`;
     }
+    await this.drawChart(f);
 
     if (this.tab === "user") {
       await this.loadUsers();
@@ -178,18 +178,23 @@ export class DonationsModal {
   }
 
   /** 선택한 기간의 추이 그래프 (1일은 시간별, 그 외는 날짜별) */
-  private async chartHtml(f: DonationFilter): Promise<string> {
+  private async drawChart(f: DonationFilter): Promise<void> {
+    const host = this.summaryEl.querySelector<HTMLElement>(".chart-slot");
+    if (!host) return;
     const donations = this.tab !== "chatter";
     const hourly = this.period === "1d";
     const bucketMs = hourly ? 3_600_000 : DAY_MS;
 
     const rows = await getTimeSeries(f, bucketMs, donations);
-    if (rows.length === 0) return "";
+    if (rows.length === 0) return;
     // 전체 기간이면 가장 오래된 기록부터, 아니면 기간 시작부터
     const from = f.since > 0 ? f.since : rows[0].bucket * bucketMs;
 
     const pad = (n: number) => String(n).padStart(2, "0");
-    return barChartHtml(rows, {
+    const date = (d: Date) =>
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    renderChart(host, rows, {
       bucketMs,
       from,
       to: Date.now(),
@@ -201,6 +206,10 @@ export class DonationsModal {
         return hourly
           ? `${pad(d.getHours())}시`
           : `${d.getMonth() + 1}/${d.getDate()}`;
+      },
+      tipLabel: (t) => {
+        const d = new Date(t);
+        return hourly ? `${date(d)} ${pad(d.getHours())}시` : date(d);
       },
     });
   }

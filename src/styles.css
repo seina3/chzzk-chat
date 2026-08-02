@@ -1071,12 +1071,61 @@ dialog::backdrop {
   margin-top: 10px;
 }
 
-.chart svg {
+/* 막대가 작아도 짚기 쉽도록 열 전체가 마우스에 반응한다 */
+.chart-plot {
+  position: relative;
+  cursor: crosshair;
+}
+
+.chart-plot svg {
   display: block;
   width: 100%;
-  height: 56px;
+  height: 64px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--border) 30%, transparent);
+}
+
+.chart-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--text) 45%, transparent);
+  pointer-events: none;
+}
+
+.chart-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #0d0e10;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.chart-tip-time {
+  color: var(--text-dim);
+  font-size: 10px;
+  margin-bottom: 2px;
+}
+
+.chart-tip-value {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.chart-tip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
 }
 
 .chart-axis {
