@@ -15,6 +15,8 @@ import {
   formatDateTime,
   formatNumber,
   renderContent,
+  roleBadgeHtml,
+  roleRowClass,
 } from "./render";
 
 /**
@@ -224,7 +226,9 @@ export class UserHistoryModal {
     el.className =
       (row.msg_type === "donation"
         ? `history-row donation ${donationTierClass(row.pay_amount ?? 0)}`
-        : "history-row") + blindRowClass(row.blind);
+        : "history-row") +
+      blindRowClass(row.blind) +
+      roleRowClass(row.role_code);
     let emojis: Record<string, string> = {};
     try {
       if (row.emojis) emojis = JSON.parse(row.emojis);
@@ -243,6 +247,7 @@ export class UserHistoryModal {
       channelTag +
       blindTagHtml(row.blind) +
       cheese +
+      roleBadgeHtml(row.role_code) +
       `<span class="content">${renderContent(row.content, emojis)}</span>`;
     return el;
   }

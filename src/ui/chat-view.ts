@@ -5,9 +5,10 @@ import {
   donationTierClass,
   escapeHtml,
   formatTime,
-  nickColor,
+  nickColorFor,
   renderContent,
   roleBadgeHtml,
+  roleRowClass,
   subBadgeHtml,
 } from "./render";
 
@@ -75,7 +76,7 @@ export class ChatView {
       nickname: row.nickname,
       content: row.content,
       emojis,
-      roleCode: "common_user",
+      roleCode: row.role_code ?? "common_user",
       subscriptionBadgeUrl: null,
       subscriptionMonth: null,
       payAmount: row.pay_amount,
@@ -115,10 +116,11 @@ export class ChatView {
       return;
     }
 
+    // 스트리머·매니저 채팅은 줄 전체를 강조한다
     row.className =
-      m.type === "donation"
+      (m.type === "donation"
         ? `msg donation ${donationTierClass(m.payAmount ?? 0)}`
-        : "msg";
+        : "msg") + roleRowClass(m.roleCode);
     if (m.blind) row.classList.add("blinded", `blind-${m.blind}`);
     const blindTag = blindTagHtml(m.blind);
 
@@ -136,7 +138,7 @@ export class ChatView {
       donationTag +
       roleBadgeHtml(m.roleCode) +
       subBadgeHtml(m.subscriptionBadgeUrl, m.subscriptionMonth) +
-      `<span class="nick" data-uid="${escapeHtml(m.userIdHash)}" style="color:${nickColor(m.userIdHash)}">${escapeHtml(m.nickname)}</span>` +
+      `<span class="nick" data-uid="${escapeHtml(m.userIdHash)}" style="color:${nickColorFor(m.userIdHash, m.roleCode)}">${escapeHtml(m.nickname)}</span>` +
       `<span class="content">${renderContent(m.content, m.emojis)}</span>`;
 
     this.append(row);

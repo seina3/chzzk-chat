@@ -13,6 +13,23 @@ export function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** 스트리머 노란색, 매니저 파란색 */
+const STREAMER_COLOR = "#ffc84d";
+const MANAGER_COLOR = "#5eb7ff";
+
+export type RoleKind = "streamer" | "manager" | null;
+
+/**
+ * 치지직 권한 코드를 스트리머/매니저로 간추린다.
+ * (streamer, streaming_chat_manager, streaming_channel_manager, manager …)
+ */
+export function roleKind(roleCode: string | null | undefined): RoleKind {
+  const code = (roleCode ?? "").toLowerCase();
+  if (code === "streamer" || code === "streaming_streamer") return "streamer";
+  if (code.includes("manager") || code.includes("operator")) return "manager";
+  return null;
+}
+
 /** userIdHash 기반 고정 닉네임 색 (Chatty 방식) */
 export function nickColor(userIdHash: string): string {
   let hash = 0;
@@ -20,6 +37,23 @@ export function nickColor(userIdHash: string): string {
     hash = (hash * 31 + userIdHash.charCodeAt(i)) | 0;
   }
   return NICK_COLORS[Math.abs(hash) % NICK_COLORS.length];
+}
+
+/** 스트리머·매니저는 고정 색으로, 나머지는 평소의 닉네임 색으로 */
+export function nickColorFor(
+  userIdHash: string,
+  roleCode: string | null | undefined,
+): string {
+  const kind = roleKind(roleCode);
+  if (kind === "streamer") return STREAMER_COLOR;
+  if (kind === "manager") return MANAGER_COLOR;
+  return nickColor(userIdHash);
+}
+
+/** 스트리머·매니저 채팅 줄에 붙일 강조 클래스 */
+export function roleRowClass(roleCode: string | null | undefined): string {
+  const kind = roleKind(roleCode);
+  return kind ? ` role-${kind}` : "";
 }
 
 /** `{:emojiId:}` 플레이스홀더를 이모티콘 <img>로 치환 */
@@ -35,12 +69,10 @@ export function renderContent(
   });
 }
 
-export function roleBadgeHtml(roleCode: string): string {
-  switch (roleCode) {
+export function roleBadgeHtml(roleCode: string | null | undefined): string {
+  switch (roleKind(roleCode)) {
     case "streamer":
       return `<span class="badge badge-streamer" title="스트리머">방장</span>`;
-    case "streaming_chat_manager":
-    case "streaming_channel_manager":
     case "manager":
       return `<span class="badge badge-manager" title="매니저">매니저</span>`;
     default:

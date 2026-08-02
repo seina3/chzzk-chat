@@ -12,7 +12,10 @@ import {
   formatDateTime,
   formatNumber,
   nickColor,
+  nickColorFor,
   renderContent,
+  roleBadgeHtml,
+  roleRowClass,
 } from "./render";
 
 type SearchMode = "user" | "chat";
@@ -143,7 +146,7 @@ export class GlobalSearchModal {
     el.className =
       (row.msg_type === "donation"
         ? `history-row donation ${donationTierClass(row.pay_amount ?? 0)}`
-        : "history-row") + blindRowClass(row.blind);
+        : "history-row") + blindRowClass(row.blind) + roleRowClass(row.role_code);
     let emojis: Record<string, string> = {};
     try {
       if (row.emojis) emojis = JSON.parse(row.emojis);
@@ -162,7 +165,8 @@ export class GlobalSearchModal {
       channelTag +
       blindTagHtml(row.blind) +
       cheese +
-      `<span class="nick" data-uid="${escapeHtml(row.user_id_hash)}" data-nick="${escapeHtml(row.nickname)}" style="color:${nickColor(row.user_id_hash)}">${escapeHtml(row.nickname)}</span> ` +
+      roleBadgeHtml(row.role_code) +
+      `<span class="nick" data-uid="${escapeHtml(row.user_id_hash)}" data-nick="${escapeHtml(row.nickname)}" style="color:${nickColorFor(row.user_id_hash, row.role_code)}">${escapeHtml(row.nickname)}</span> ` +
       `<span class="content">${renderContent(row.content, emojis)}</span>`;
     return el;
   }

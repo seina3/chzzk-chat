@@ -18,6 +18,8 @@ export interface StoredMessage {
   blind: string | null;
   /** 1이면 채널이 금액을 숨겨 액수를 알 수 없는 후원 */
   amount_hidden: number | null;
+  /** 치지직 권한 코드 (streamer / …manager / common_user) */
+  role_code: string | null;
 }
 
 /** 한 유저가 썼던 닉네임과 사용 기간 */
@@ -84,6 +86,10 @@ export async function initDb(dbPath?: string): Promise<void> {
   await db
     .execute(`ALTER TABLE messages ADD COLUMN amount_hidden INTEGER`)
     .catch(() => undefined);
+  // 스트리머·매니저 채팅을 나중에 다시 열어도 강조할 수 있도록 권한을 남긴다
+  await db
+    .execute(`ALTER TABLE messages ADD COLUMN role_code TEXT`)
+    .catch(() => undefined);
 
   // 중복 판정 기준에서 content를 뺀다.
   // 같은 메시지가 나중에 가려진 내용으로 다시 내려와도 별도 행으로 쌓이지 않고,
@@ -129,8 +135,8 @@ export function saveMessage(m: ChatMessage): void {
       const db = requireDb();
       await db.execute(
         `INSERT OR IGNORE INTO messages
-         (channel_id, user_id_hash, nickname, content, emojis, msg_type, pay_amount, msg_time, blind, amount_hidden)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         (channel_id, user_id_hash, nickname, content, emojis, msg_type, pay_amount, msg_time, blind, amount_hidden, role_code)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           m.channelId,
           m.userIdHash,
@@ -142,6 +148,7 @@ export function saveMessage(m: ChatMessage): void {
           m.time,
           m.blind ?? null,
           m.amountHidden ? 1 : null,
+          m.roleCode || null,
         ],
       );
       // 이미 저장된 메시지가 가려진 상태로 다시 온 경우: 내용은 그대로 두고

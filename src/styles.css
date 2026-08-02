@@ -14,6 +14,8 @@
   --text-dim: #8f939c;
   --accent: #00e6a1; /* 치지직 그린 */
   --danger: #f4443e;
+  --streamer: #ffc84d; /* 스트리머 강조 — 노란색 계열 */
+  --manager: #5eb7ff; /* 매니저 강조 — 파란색 계열 */
   --radius: 8px;
   --radius-sm: 6px;
 }
@@ -476,13 +478,38 @@ button:disabled {
 }
 
 .badge-streamer {
-  background: var(--danger);
-  color: #fff;
+  background: var(--streamer);
+  color: #2b1d00;
 }
 
 .badge-manager {
-  background: #2e7d32;
-  color: #fff;
+  background: var(--manager);
+  color: #04223a;
+}
+
+/* 스트리머·매니저 채팅 강조 — 스트리머는 노란색, 매니저는 파란색 계열 */
+
+.role-streamer,
+.role-manager {
+  --role: var(--streamer);
+  background: color-mix(in srgb, var(--role) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--role);
+  border-radius: var(--radius-sm);
+}
+
+.role-manager {
+  --role: var(--manager);
+}
+
+.role-streamer:hover,
+.role-manager:hover {
+  background: color-mix(in srgb, var(--role) 18%, transparent);
+}
+
+/* 후원은 금액 티어 색이 우선이므로 강조는 왼쪽 선으로만 남긴다 */
+.donation.role-streamer,
+.donation.role-manager {
+  background: color-mix(in srgb, var(--tier) 14%, transparent);
 }
 
 .badge-img {
