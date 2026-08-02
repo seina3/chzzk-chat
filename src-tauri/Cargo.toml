@@ -1,0 +1,32 @@
+[package]
+name = "chzzk-chat"
+version = "0.1.0"
+description = "치지직 전용 데스크톱 채팅 클라이언트"
+edition = "2021"
+
+[lib]
+name = "chzzk_chat_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# cookies_for_url은 tauri 2.4부터 지원
+tauri = { version = "2.4", features = [] }
+tauri-plugin-dialog = "2"
+tokio = { version = "1", features = ["time"] }
+url = "2"
+# 치지직 API 호출은 Rust에서 직접 수행 (웹뷰 fetch는 UA/Cookie 헤더를 강제 제거함)
+reqwest = { version = "0.12", default-features = true }
+tauri-plugin-notification = "2"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+tauri-plugin-websocket = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

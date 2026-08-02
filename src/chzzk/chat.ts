@@ -1,0 +1,462 @@
+import WebSocket from "@tauri-apps/plugin-websocket";
+import { getDeviceUuid, WINDOW_ID } from "../settings";
+import type { BlindType, ChatMessage } from "./types";
+
+/** 치지직 채팅 웹소켓 명령 코드 (비공식 프로토콜) */
+const CMD = {
+  ping: 0,
+  pong: 10000,
+  connect: 100,
+  connected: 10100,
+  requestRecentChat: 5101,
+  recentChat: 15101,
+  sendChat: 3101,
+  /** 전송 결과 응답 (3101 + 10000) */
+  sendChatAck: 13101,
+  chat: 93101,
+  donation: 93102,
+  blind: 94008,
+} as const;
+
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/** 치지직 메시지 타입 코드 */
+const MSG_TYPE = {
+  text: 1,
+  donation: 10,
+  subscription: 11,
+  system: 30,
+} as const;
+
+export type ChatStatus = "connecting" | "connected" | "reconnecting" | "disconnected";
+
+interface ChzzkChatOptions {
+  channelId: string;
+  chatChannelId: string;
+  accessToken: string;
+  /** 로그인 유저의 userIdHash. null이면 익명(읽기 전용) */
+  uid: string | null;
+  /** 로그인 유저의 닉네임 (내가 보낸 메시지 표시용) */
+  nickname?: string;
+  onMessage: (m: ChatMessage) => void;
+  onBlind: (userIdHash: string, msgTime: number) => void;
+  onStatus: (status: ChatStatus, detail?: string) => void;
+  /** 서버가 돌려준 오류 (전송 실패 원인 등) */
+  onError: (message: string) => void;
+  /** 진단 모드일 때 주고받은 원본 프레임 */
+  onDebug?: (direction: "→" | "←", frame: string) => void;
+}
+
+export class ChzzkChat {
+  private ws: Awaited<ReturnType<typeof WebSocket.connect>> | null = null;
+  private sid = "";
+  private tid = 2;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private closed = false;
+  private retries = 0;
+  /** 전송 후 자기 메시지가 되돌아오는지 확인하는 타이머 */
+  private sendEchoTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastSentAt = 0;
+  private lastSentText = "";
+  /** 접수 응답을 기다리는 전송 내용 */
+  private pendingSendText = "";
+  readonly canSend: boolean;
+
+  constructor(private opts: ChzzkChatOptions) {
+    this.canSend = opts.uid !== null;
+  }
+
+  /** 채팅 서버는 kr-ss1 ~ kr-ss9 로 샤딩되며 chatChannelId로 결정 */
+  private serverUrl(): string {
+    const sum = [...this.opts.chatChannelId].reduce(
+      (acc, ch) => acc + ch.charCodeAt(0),
+      0,
+    );
+    return `wss://kr-ss${(sum % 9) + 1}.chat.naver.com/chat`;
+  }
+
+  /**
+   * 웹소켓 연결. 브라우저와 동일한 Origin/User-Agent를 붙여 시도한다.
+   * (헤더 없이 붙으면 치지직이 비정상 클라이언트로 보고 보낸 채팅을
+   *  접수한 뒤 자동 블라인드하는 것으로 의심됨)
+   * 플러그인이 헤더 옵션을 지원하지 않으면 헤더 없이 다시 시도한다.
+   */
+  private async openSocket() {
+    const url = this.serverUrl();
+    try {
+      return await WebSocket.connect(url, {
+        headers: [
+          ["Origin", "https://chzzk.naver.com"],
+          ["User-Agent", BROWSER_UA],
+        ],
+      });
+    } catch (e) {
+      console.warn("헤더 포함 연결 실패, 헤더 없이 재시도:", e);
+      return await WebSocket.connect(url);
+    }
+  }
+
+  async connect(): Promise<void> {
+    this.closed = false;
+    this.opts.onStatus(this.retries > 0 ? "reconnecting" : "connecting");
+    this.ws = await this.openSocket();
+    this.ws.addListener((msg) => {
+      if (msg.type === "Text") {
+        this.handleRaw(msg.data as string);
+      } else if (msg.type === "Close") {
+        this.handleClose();
+      }
+    });
+    // 웹 클라이언트의 접속 프레임과 동일하게 맞춘다.
+    // uuid / windowId는 기기·창 식별자로, 빠지면 보낸 채팅이 자동 블라인드된다.
+    await this.send({
+      ver: "3",
+      cmd: CMD.connect,
+      svcid: "game",
+      cid: this.opts.chatChannelId,
+      sid: null,
+      bdy: {
+        uid: this.opts.uid,
+        devType: 2001,
+        accTkn: this.opts.accessToken,
+        auth: this.opts.uid ? "SEND" : "READ",
+        libVer: "4.11.0",
+        osVer: "Windows/10",
+        devName: "Google Chrome/150.0.0.0",
+        locale: "ko",
+        timezone: "Asia/Seoul",
+        uuid: getDeviceUuid(),
+        windowId: WINDOW_ID,
+      },
+      tid: 1,
+    });
+  }
+
+  async disconnect(): Promise<void> {
+    this.closed = true;
+    this.stopPing();
+    this.clearEchoTimer();
+    if (this.ws) {
+      await this.ws.disconnect().catch(() => {});
+      this.ws = null;
+    }
+    this.opts.onStatus("disconnected");
+  }
+
+  async sendChat(text: string): Promise<void> {
+    if (!this.canSend) throw new Error("채팅 전송에는 네이버 로그인이 필요합니다.");
+    if (!this.ws || !this.sid) throw new Error("채팅 서버에 연결되어 있지 않습니다.");
+    // 같은 내용을 연달아 보내면 치지직 도배 방지에 걸려 블라인드된다
+    if (text === this.lastSentText && Date.now() - this.lastSentAt < 3000) {
+      throw new Error("같은 내용을 너무 빨리 다시 보낼 수 없습니다.");
+    }
+    this.lastSentText = text;
+    this.pendingSendText = text;
+
+    // 실제 클라이언트가 보내는 형식 그대로 맞춘다.
+    // (수신 프레임에 남아 있는 다른 사용자의 extras 원문에서 확인:
+    //  emojis는 빈 문자열이 아니라 빈 객체이고, extraToken이 포함된다)
+    const extras = {
+      chatType: "STREAMING",
+      osType: "PC",
+      extraToken: this.opts.accessToken,
+      streamingChannelId: this.opts.channelId,
+      emojis: {},
+    };
+
+    await this.send({
+      ver: "3",
+      cmd: CMD.sendChat,
+      svcid: "game",
+      cid: this.opts.chatChannelId,
+      sid: this.sid,
+      retry: false,
+      bdy: {
+        msg: text,
+        msgTypeCode: MSG_TYPE.text,
+        extras: JSON.stringify(extras),
+        msgTime: Date.now(),
+      },
+      tid: this.tid++,
+    });
+
+    // 서버가 접수 응답조차 주지 않는 경우를 잡는다 (응답이 오면 곧 해제됨)
+    this.lastSentAt = Date.now();
+    if (this.sendEchoTimer) clearTimeout(this.sendEchoTimer);
+    this.sendEchoTimer = setTimeout(() => {
+      this.sendEchoTimer = null;
+      this.opts.onError("전송한 채팅에 대한 서버 응답이 없습니다.");
+    }, 6000);
+  }
+
+  private async send(payload: unknown): Promise<void> {
+    if (!this.ws) return;
+    const frame = JSON.stringify(payload);
+    // 핑/퐁은 잡음이라 진단에서 제외
+    if (this.debugUntil > Date.now() && (payload as any)?.cmd !== CMD.ping) {
+      this.opts.onDebug?.("→", frame);
+    }
+    await this.ws.send(frame);
+  }
+
+  /** 지정한 시간(ms) 동안 주고받는 프레임을 onDebug로 흘려보낸다 */
+  private debugUntil = 0;
+
+  startFrameDebug(durationMs: number): void {
+    this.debugUntil = Date.now() + durationMs;
+  }
+
+  private handleRaw(raw: string): void {
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return;
+    }
+
+    if (this.debugUntil > Date.now() && data.cmd !== CMD.ping && data.cmd !== CMD.pong) {
+      this.opts.onDebug?.("←", raw.length > 1500 ? `${raw.slice(0, 1500)}…` : raw);
+    }
+
+    // 서버가 거절한 요청은 retCode로 알려준다 (0 또는 없음 = 정상)
+    if (data.retCode !== undefined && data.retCode !== null && data.retCode !== 0) {
+      this.clearEchoTimer();
+      this.opts.onError(
+        `서버 오류 ${data.retCode}${data.retMsg ? `: ${data.retMsg}` : ""}`,
+      );
+      return;
+    }
+
+    switch (data.cmd) {
+      case CMD.connected:
+        this.sid = data.bdy?.sid ?? "";
+        this.retries = 0;
+        this.opts.onStatus("connected");
+        this.startPing();
+        void this.requestRecentChat();
+        break;
+      case CMD.ping:
+        void this.send({ ver: "3", cmd: CMD.pong });
+        break;
+      case CMD.pong:
+        break;
+      case CMD.sendChatAck: {
+        // 서버가 전송을 접수했다 (retCode가 0이 아니면 위에서 이미 오류 처리).
+        // 치지직은 내가 보낸 채팅을 되돌려주지 않으므로 직접 화면에 올린다.
+        this.clearEchoTimer();
+        const text = this.pendingSendText;
+        this.pendingSendText = "";
+        if (text && this.opts.uid) {
+          this.opts.onMessage({
+            channelId: this.opts.channelId,
+            userIdHash: this.opts.uid,
+            nickname: this.opts.nickname ?? "나",
+            content: text,
+            emojis: {},
+            roleCode: "common_user",
+            subscriptionBadgeUrl: null,
+            subscriptionMonth: null,
+            payAmount: null,
+            // 서버가 정한 시각을 쓰면 나중에 같은 메시지가 와도 중복되지 않는다
+            time: data.bdy?.msgTime ?? data.bdy?.ctime ?? Date.now(),
+            type: "chat",
+            blind: null,
+          });
+        }
+        break;
+      }
+      case CMD.chat:
+      case CMD.donation: {
+        const isDonation = data.cmd === CMD.donation;
+        for (const raw of data.bdy ?? []) {
+          const m = this.parseChat(raw, isDonation);
+          if (!m) continue;
+          // 내 메시지가 되돌아왔으면 전송이 확인된 것
+          if (this.opts.uid && m.userIdHash === this.opts.uid) {
+            this.clearEchoTimer();
+          }
+          this.opts.onMessage(m);
+        }
+        break;
+      }
+      case CMD.recentChat: {
+        const list: any[] = data.bdy?.messageList ?? [];
+        const parsed = list
+          .map((raw) =>
+            this.parseChat(
+              raw,
+              (raw.messageTypeCode ?? raw.msgTypeCode) === MSG_TYPE.donation,
+            ),
+          )
+          .filter((m): m is ChatMessage => m !== null)
+          .sort((a, b) => a.time - b.time);
+        for (const m of parsed) this.opts.onMessage({ ...m, isHistory: true });
+        break;
+      }
+      case CMD.blind: {
+        const b = data.bdy ?? {};
+        const uid = b.userId ?? b.userIdHash ?? "";
+        const time = b.messageTime ?? b.msgTime ?? 0;
+        // 방금 보낸 내 메시지가 블라인드되면 전송은 됐지만 노출되지 않는다
+        if (uid && uid === this.opts.uid && Date.now() - this.lastSentAt < 10_000) {
+          this.clearEchoTimer();
+          this.opts.onError(
+            "보낸 메시지가 치지직에서 블라인드 처리되었습니다. " +
+              "채팅 제한(구독자·팔로워 전용, 도배 방지, 계정 제재 등)에 걸렸는지 확인해 주세요.",
+          );
+        }
+        if (uid && time) this.opts.onBlind(uid, time);
+        break;
+      }
+    }
+  }
+
+  private parseChat(raw: any, isDonationCmd: boolean): ChatMessage | null {
+    // 클린봇/운영자가 가린 메시지도 버리지 않고 사유를 붙여 그대로 전달한다
+    const status = raw.msgStatusType ?? raw.messageStatusType;
+    const blind: BlindType | null =
+      status === "CBOTBLIND"
+        ? "cleanbot"
+        : status === "BLIND"
+          ? "moderator"
+          : status === "HIDDEN"
+            ? "hidden"
+            : null;
+
+    let profile: any = null;
+    try {
+      profile = raw.profile ? JSON.parse(raw.profile) : null;
+    } catch {
+      /* 프로필 파싱 실패 시 익명 취급 */
+    }
+    let extras: any = {};
+    try {
+      extras = raw.extras ? JSON.parse(raw.extras) : {};
+    } catch {
+      /* extras 없는 메시지도 존재 */
+    }
+
+    // 치지직 메시지 타입 코드: 10=후원, 11=구독, 30=시스템 메시지.
+    // 구독 알림과 각종 안내(채팅 제한 등)가 후원과 같은 명령(93102)으로 오므로,
+    // 명령만 보고 후원으로 단정하지 않고 구독 → 후원 → 시스템 순으로 판정한다.
+    const typeCode: number = raw.msgTypeCode ?? raw.messageTypeCode ?? 1;
+    const payAmount = Number(extras?.payAmount ?? 0);
+    const hasPay = Number.isFinite(payAmount) && payAmount > 0;
+
+    const isSubscription =
+      typeCode === MSG_TYPE.subscription || extras?.month !== undefined;
+    // 금액 없는 후원은 존재하지 않는다 — 금액이 없으면 안내 메시지로 본다
+    const isDonation =
+      !isSubscription && hasPay && (isDonationCmd || typeCode === MSG_TYPE.donation);
+    const isSystem =
+      !isSubscription &&
+      !isDonation &&
+      (typeCode === MSG_TYPE.system || isDonationCmd);
+
+    // 시스템/구독 알림에는 profile이 없을 수 있고, 대상자는 extras 쪽에 들어 있다
+    const actor =
+      profile ?? extras?.registerChatProfile ?? extras?.targetChatProfile ?? null;
+    const nickname: string = actor?.nickname ?? (isDonation ? "익명의 후원자" : "");
+    const userMsg: string = (raw.msg ?? raw.content ?? "").toString();
+    const desc: string = (extras?.description ?? "").toString().trim();
+
+    let content = userMsg;
+    if (isSubscription) {
+      // 안내 문구(설명)가 없으면 개월 수로 직접 만든다
+      const month = extras?.month;
+      const tier = extras?.tierName ? ` (${extras.tierName})` : "";
+      const headline =
+        desc ||
+        (month
+          ? `${nickname} 님이 ${month}개월 동안 구독 중이에요 🎉${tier}`
+          : `${nickname} 님이 구독했어요 🎉${tier}`);
+      const typed = userMsg.trim();
+      content = typed && typed !== headline ? `${headline} — ${typed}` : headline;
+    } else if (isSystem) {
+      content = desc || userMsg;
+    }
+
+    // 후원·구독은 메시지 없이 오는 경우가 흔하므로 그대로 남기고,
+    // 내용 없는 일반/시스템 메시지만 빈 줄이 되지 않게 건너뛴다
+    if (!content.trim() && !isDonation && !isSubscription) return null;
+
+    const time: number = raw.msgTime ?? raw.messageTime ?? Date.now();
+    const sub = profile?.streamingProperty?.subscription;
+
+    let type: ChatMessage["type"] = "chat";
+    if (isDonation) type = "donation";
+    else if (isSubscription) type = "subscription";
+    else if (isSystem) type = "system";
+
+    return {
+      channelId: this.opts.channelId,
+      userIdHash: actor?.userIdHash ?? "anonymous",
+      nickname,
+      content,
+      emojis:
+        extras && typeof extras.emojis === "object" && extras.emojis !== null
+          ? extras.emojis
+          : {},
+      roleCode: actor?.userRoleCode ?? "common_user",
+      subscriptionBadgeUrl: sub?.badge?.imageUrl ?? null,
+      subscriptionMonth: sub?.accumulativeMonth ?? extras?.month ?? null,
+      // 구독·안내는 금액이 아니므로 후원 집계에 섞이지 않게 null로 둔다
+      payAmount: isDonation ? payAmount : null,
+      time,
+      type,
+      blind,
+    };
+  }
+
+  private async requestRecentChat(count = 50): Promise<void> {
+    await this.send({
+      ver: "3",
+      cmd: CMD.requestRecentChat,
+      svcid: "game",
+      cid: this.opts.chatChannelId,
+      sid: this.sid,
+      bdy: { recentMessageCount: count },
+      tid: this.tid++,
+    });
+  }
+
+  private startPing(): void {
+    this.stopPing();
+    this.pingTimer = setInterval(() => {
+      void this.send({ ver: "3", cmd: CMD.ping });
+    }, 20_000);
+  }
+
+  private stopPing(): void {
+    if (this.pingTimer !== null) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
+
+  private clearEchoTimer(): void {
+    if (this.sendEchoTimer !== null) {
+      clearTimeout(this.sendEchoTimer);
+      this.sendEchoTimer = null;
+    }
+  }
+
+  private handleClose(): void {
+    this.stopPing();
+    this.ws = null;
+    if (this.closed) return;
+    if (this.retries >= 5) {
+      this.opts.onStatus("disconnected", "재연결 실패 (5회 초과)");
+      return;
+    }
+    const delay = Math.min(3_000 * 2 ** this.retries, 30_000);
+    this.retries += 1;
+    this.opts.onStatus("reconnecting", `${delay / 1000}초 후 재연결`);
+    setTimeout(() => {
+      if (!this.closed) {
+        this.connect().catch(() => this.handleClose());
+      }
+    }, delay);
+  }
+}

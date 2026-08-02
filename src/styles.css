@@ -1,0 +1,975 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #0e0f12; /* 앱 배경 */
+  --bg-alt: #16181c; /* 사이드바/헤더/입력줄 */
+  --bg-raised: #1d2026; /* 입력칸/카드 */
+  --bg-hover: #23262d;
+  --border: #2a2d34;
+  --text: #e9eaec;
+  --text-dim: #8f939c;
+  --accent: #00e6a1; /* 치지직 그린 */
+  --danger: #f4443e;
+  --radius: 8px;
+  --radius-sm: 6px;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family:
+    Pretendard,
+    "Malgun Gothic",
+    "Apple SD Gothic Neo",
+    system-ui,
+    sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---------- 스크롤바 ---------- */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3e47;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- 공통 위젯 ---------- */
+
+input,
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease,
+    opacity 0.12s ease;
+}
+
+input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(0 230 161 / 0.15);
+}
+
+input:disabled {
+  opacity: 0.45;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: #3a3e47;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------- 사이드바 ---------- */
+
+#sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+
+#channel-list {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  padding: 6px;
+}
+
+.channel {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  margin-bottom: 2px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+
+.channel:hover {
+  background: var(--bg-hover);
+}
+
+.channel.active {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.channel img,
+.channel-noimg {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.channel.active img {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.channel-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 수집 중 표시 */
+.channel .rec {
+  color: var(--accent);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.channel .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 6px rgb(244 68 62 / 0.7);
+  flex-shrink: 0;
+}
+
+.channel-remove {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  visibility: hidden;
+}
+
+.channel-remove:hover {
+  color: var(--danger);
+  background: none !important;
+}
+
+.channel:hover .channel-remove {
+  visibility: visible;
+}
+
+.sidebar-footer {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* 버튼 3개가 좁은 사이드바에서 줄바꿈되지 않도록 여백을 줄인다 */
+.sidebar-footer button {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 2px;
+  font-size: 12px;
+  background: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 메인 ---------- */
+
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 대시보드 */
+
+#dashboard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+}
+
+#dash-img {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  outline: 2px solid var(--border);
+  outline-offset: 2px;
+}
+
+.dash-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.dash-row1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#dash-live {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+#dash-live.on-air {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+#dash-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+#dash-viewers,
+#dash-uptime {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-row2 {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+#dash-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+#dash-category {
+  color: var(--accent);
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+/* 채팅 */
+
+#chat-container {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+#chat-messages {
+  height: 100%;
+  overflow-y: auto;
+  padding: 8px 12px;
+  overflow-wrap: anywhere;
+}
+
+.msg {
+  padding: 3px 6px;
+  line-height: 1.65;
+  border-radius: var(--radius-sm);
+}
+
+.msg:hover {
+  background: rgb(255 255 255 / 0.03);
+}
+
+.msg .time {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-right: 7px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.msg .nick {
+  font-weight: 700;
+  cursor: pointer;
+  margin-right: 7px;
+}
+
+.msg .nick:hover {
+  text-decoration: underline;
+}
+
+/* 치지직 구독/시스템 알림 배너 */
+.msg.notice {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 3px 0;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: color-mix(in srgb, #7d6bd6 14%, transparent);
+  border: 1px solid color-mix(in srgb, #7d6bd6 55%, transparent);
+}
+
+.msg.notice .content {
+  font-weight: bold;
+  color: #cfc6f5;
+}
+
+.msg.notice.subscribe {
+  background: color-mix(in srgb, #d68fb8 14%, transparent);
+  border-color: color-mix(in srgb, #d68fb8 55%, transparent);
+}
+
+.msg.notice.subscribe .content {
+  color: #f2cfe2;
+}
+
+.notice-icon {
+  flex-shrink: 0;
+}
+
+.msg.system {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* 가려진 메시지 — 클린봇 건은 내용을 읽을 수 있게 두고 표시만 한다 */
+.blind-tag {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 5px;
+  background: #4a3f2a;
+  color: #e0c98a;
+  white-space: nowrap;
+}
+
+.msg.blind-cleanbot {
+  background: color-mix(in srgb, #b08a3c 10%, transparent);
+}
+
+.msg.blind-cleanbot .content {
+  opacity: 0.8;
+}
+
+.msg.blinded:not(.blind-cleanbot) .content,
+.history-row.blinded:not(.blind-cleanbot) .content {
+  text-decoration: line-through;
+  opacity: 0.45;
+}
+
+.history-row.blind-cleanbot .content {
+  opacity: 0.8;
+}
+
+.emote {
+  height: 24px;
+  vertical-align: middle;
+  margin: -2px 1px 0;
+}
+
+/* 뱃지 */
+
+.badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.badge-streamer {
+  background: var(--danger);
+  color: #fff;
+}
+
+.badge-manager {
+  background: #2e7d32;
+  color: #fff;
+}
+
+.badge-img {
+  height: 16px;
+  vertical-align: middle;
+  margin-right: 6px;
+  border-radius: 3px;
+}
+
+/* 후원 — 치지직 후원 UI의 금액 구간별 색상 */
+
+.donation {
+  --tier: #78909c;
+  background: color-mix(in srgb, var(--tier) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tier) 55%, transparent);
+}
+
+/* 금액 구간 색 — 후원 메시지 외(집계 순위표 등)에서도 쓰도록 독립 정의 */
+.tier-base   { --tier: #78909c; } /* ~999 */
+.tier-purple { --tier: #6a5fc9; } /* 1,000+ */
+.tier-teal   { --tier: #3e848d; } /* 10,000+ */
+.tier-green  { --tier: #43915a; } /* 100,000+ */
+.tier-orange { --tier: #c6893c; } /* 500,000+ */
+.tier-red    { --tier: #c85b5f; } /* 1,000,000+ */
+
+.msg.donation {
+  margin: 3px 0;
+  padding: 6px 8px;
+}
+
+/* 고액 후원 강조 */
+.donation.tier-orange,
+.donation.tier-red {
+  background: color-mix(in srgb, var(--tier) 24%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--tier) 40%, transparent);
+}
+
+.cheese {
+  font-weight: 700;
+  color: #ffc44d;
+  margin-right: 7px;
+}
+
+.donation .cheese {
+  color: color-mix(in srgb, var(--tier) 40%, #ffffff);
+}
+
+/* 최신 채팅 버튼 */
+
+#scroll-bottom {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: #04281d;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 16px;
+  font-weight: 700;
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+}
+
+#scroll-bottom:hover {
+  background: #14f0b0;
+}
+
+/* 상태바 + 입력 */
+
+#status-bar {
+  padding: 3px 14px;
+  color: var(--text-dim);
+  font-size: 11px;
+  min-height: 20px;
+}
+
+#chat-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-alt);
+}
+
+#chat-input {
+  flex: 1;
+  border-radius: 999px;
+  padding: 8px 14px;
+}
+
+#send-btn {
+  border-radius: 999px;
+  padding: 8px 18px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #04281d;
+  font-weight: 700;
+}
+
+#send-btn:hover:not(:disabled) {
+  background: #14f0b0;
+  border-color: #14f0b0;
+}
+
+#send-btn:disabled {
+  background: var(--bg-raised);
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+
+/* ---------- 모달 공통 ---------- */
+
+dialog {
+  margin: auto;
+  background: var(--bg-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  width: min(660px, 92vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.5);
+}
+
+dialog:not([open]) {
+  display: none;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-header h2 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.modal-header button {
+  border: none;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-dim);
+  padding: 2px 6px;
+}
+
+.modal-header button:hover {
+  color: var(--text);
+  background: none !important;
+}
+
+/* ---------- 유저 기록 모달 ---------- */
+
+#user-modal-stats {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+#user-modal-list {
+  overflow-y: auto;
+  min-height: 140px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px;
+  background: var(--bg);
+}
+
+.history-row {
+  padding: 4px 6px;
+  line-height: 1.65;
+  border-radius: var(--radius-sm);
+}
+
+.history-row:hover {
+  background: rgb(255 255 255 / 0.03);
+}
+
+.history-row .time {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-right: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-row .nick {
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.history-row .nick:hover {
+  text-decoration: underline;
+}
+
+.history-row.donation {
+  margin: 3px 0;
+  padding: 5px 8px;
+}
+
+.history-empty {
+  color: var(--text-dim);
+  text-align: center;
+  padding: 28px;
+}
+
+/* ---------- 전체 검색 ---------- */
+
+.search-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.search-tabs button {
+  flex: 1;
+  color: var(--text-dim);
+  background: transparent;
+}
+
+.search-tabs button.active {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 700;
+  background: rgb(0 230 161 / 0.07);
+}
+
+#search-results {
+  overflow-y: auto;
+  min-height: 180px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px;
+  background: var(--bg);
+}
+
+.search-user {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.search-user:hover {
+  background: var(--bg-hover);
+}
+
+.search-user .nick {
+  font-weight: 700;
+}
+
+.search-user-meta {
+  color: var(--text-dim);
+  font-size: 11px;
+  flex: 1;
+}
+
+.uid {
+  color: var(--text-dim);
+  font-size: 10px;
+  font-family: Consolas, monospace;
+  opacity: 0.7;
+}
+
+.channel-tag {
+  font-size: 10px;
+  color: var(--accent);
+  background: rgb(0 230 161 / 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-right: 6px;
+}
+
+/* ---------- 설정 ---------- */
+
+/* ---------- 후원 집계 ---------- */
+
+.donation-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.seg {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.seg button {
+  flex: 1;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.seg button.active {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: bold;
+}
+
+#donation-channel {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 8px;
+  max-width: 45%;
+}
+
+#donation-summary {
+  text-align: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.donation-total {
+  font-size: 24px;
+  font-weight: bold;
+  color: #ffc44d;
+}
+
+.donation-sub {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+#donation-results {
+  overflow-y: auto;
+  min-height: 180px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px;
+}
+
+.donation-user {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 4px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.donation-user:last-child {
+  border-bottom: none;
+}
+
+.donation-user:hover {
+  background: var(--bg-hover);
+}
+
+.donation-user .rank {
+  color: var(--text-dim);
+  font-size: 11px;
+  min-width: 22px;
+  text-align: right;
+}
+
+.donation-user .nick {
+  font-weight: bold;
+}
+
+.donation-user-meta {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.donation-user-total {
+  font-weight: bold;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: color-mix(in srgb, var(--tier) 45%, #ffffff);
+}
+
+.settings-help {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.settings-help code {
+  background: var(--bg-raised);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+#login-status {
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.login-row {
+  display: flex;
+  gap: 8px;
+}
+
+.naver-btn {
+  flex: 1;
+  background: #03c75a; /* 네이버 그린 */
+  border-color: #03c75a;
+  color: #fff;
+  font-weight: 700;
+}
+
+.naver-btn:hover:not(:disabled) {
+  background: #02b351 !important;
+  border-color: #02b351;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.checkbox-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.checkbox-row span {
+  flex: 1;
+}
+
+.log-dir-row {
+  display: flex;
+  gap: 6px;
+}
+
+.log-dir-row input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.log-dir-row button {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#settings-modal details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#settings-modal summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+#settings-modal summary:hover {
+  color: var(--text);
+}
+
+#settings-modal details label {
+  margin-top: 8px;
+}
+
+#settings-modal details button {
+  margin-top: 8px;
+}
+
+#settings-modal label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+/* 텍스트 입력만 늘린다 (체크박스까지 늘어나면 라벨 정렬이 깨짐) */
+#settings-modal label input:not([type="checkbox"]) {
+  flex: 1;
+}

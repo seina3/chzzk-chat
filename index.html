@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chzzk Chat</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <div class="sidebar-header">
+          <input id="channel-input" placeholder="채널 URL 또는 ID" spellcheck="false" />
+          <button id="add-channel">추가</button>
+        </div>
+        <ul id="channel-list"></ul>
+        <div class="sidebar-footer">
+          <button id="open-search">🔍 검색</button>
+          <button id="open-donations">🧀 후원</button>
+          <button id="open-settings">⚙ 설정</button>
+        </div>
+      </aside>
+
+      <main id="main">
+        <header id="dashboard" class="hidden">
+          <img id="dash-img" class="hidden" alt="" />
+          <div class="dash-text">
+            <div class="dash-row1">
+              <span id="dash-live">오프라인</span>
+              <span id="dash-name"></span>
+              <span id="dash-viewers"></span>
+              <span id="dash-uptime"></span>
+            </div>
+            <div class="dash-row2">
+              <span id="dash-title"></span>
+              <span id="dash-category"></span>
+            </div>
+          </div>
+        </header>
+
+        <div id="chat-container">
+          <div id="chat-messages"></div>
+          <button id="scroll-bottom" class="hidden">↓ 최신 채팅</button>
+        </div>
+
+        <div id="status-bar"><span id="conn-status"></span></div>
+
+        <div id="chat-input-row">
+          <input id="chat-input" disabled />
+          <button id="send-btn" disabled>전송</button>
+        </div>
+      </main>
+    </div>
+
+    <dialog id="user-modal">
+      <div class="modal-header">
+        <h2 id="user-modal-title"></h2>
+        <button id="user-modal-close">×</button>
+      </div>
+      <div id="user-modal-stats"></div>
+      <div id="user-modal-tabs" class="seg">
+        <button data-mode="all" class="active">채팅 내역 (후원 포함)</button>
+        <button data-mode="donation">🧀 후원 내역</button>
+      </div>
+      <input id="user-modal-search" placeholder="메시지 내용 검색…" spellcheck="false" />
+      <div id="user-modal-list"></div>
+      <button id="user-modal-more" class="hidden">더 보기</button>
+    </dialog>
+
+    <dialog id="search-modal">
+      <div class="modal-header">
+        <h2>전체 검색</h2>
+        <button id="search-close">×</button>
+      </div>
+      <div class="search-tabs">
+        <button id="search-tab-user" class="active">유저</button>
+        <button id="search-tab-chat">채팅 내용</button>
+      </div>
+      <input id="search-input" placeholder="닉네임 또는 유저 ID 검색… (과거 닉네임 포함)" spellcheck="false" />
+      <div id="search-results"></div>
+      <button id="search-more" class="hidden">더 보기</button>
+    </dialog>
+
+    <dialog id="donation-modal">
+      <div class="modal-header">
+        <h2>후원 집계</h2>
+        <button id="donation-close">×</button>
+      </div>
+      <div class="donation-controls">
+        <div id="donation-periods" class="seg">
+          <button data-period="1d">1일</button>
+          <button data-period="7d" class="active">7일</button>
+          <button data-period="30d">30일</button>
+          <button data-period="all">전체</button>
+        </div>
+        <select id="donation-channel">
+          <option value="">전체 채널</option>
+        </select>
+      </div>
+      <div id="donation-summary"></div>
+      <div id="donation-tabs" class="seg">
+        <button data-tab="user" class="active">유저별 순위</button>
+        <button data-tab="channel">채널 순위</button>
+      </div>
+      <div id="donation-results"></div>
+      <button id="donation-more" class="hidden">더 보기</button>
+    </dialog>
+
+    <dialog id="settings-modal">
+      <div class="modal-header">
+        <h2>설정</h2>
+        <button id="settings-close">×</button>
+      </div>
+      <p class="settings-help">
+        채팅 <b>전송</b>과 연령 제한 채널 접속에는 네이버 로그인이 필요합니다.
+        읽기만 할 경우 로그인 없이 사용할 수 있습니다.
+      </p>
+      <div id="login-status" class="settings-help"></div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="set-notify-live" />
+        <span>방송 시작 시 알림 표시</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="set-collect-all" />
+        <span>등록한 모든 채널의 채팅을 함께 수집 (보고 있지 않아도 저장)</span>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="set-log-txt" />
+        <span>채팅을 txt 파일로도 실시간 저장 — 채널명/날짜.txt</span>
+      </label>
+      <div class="log-dir-row">
+        <input id="set-log-dir" spellcheck="false" />
+        <button id="log-dir-pick">폴더 선택</button>
+        <button id="log-dir-open" title="로그 폴더를 탐색기에서 열기">열기</button>
+      </div>
+      <div class="login-row">
+        <button id="naver-login-btn" class="naver-btn">N 네이버 아이디로 로그인</button>
+        <button id="naver-logout-btn" class="hidden">로그아웃</button>
+      </div>
+      <p class="settings-help">
+        로그인 버튼을 누르면 <b>네이버 공식 로그인 페이지</b>가 새 창으로 열립니다.
+        비밀번호는 네이버에만 입력되며, 앱은 로그인 후 세션 쿠키만 저장합니다.
+      </p>
+      <details>
+        <summary>문제 진단 (고급)</summary>
+        <p class="settings-help">
+          채팅 전송이 안 될 때, 아래 버튼을 누른 뒤 15초 안에 채팅을 보내면
+          서버와 주고받은 원본 내용이 채팅창에 표시됩니다.
+        </p>
+        <button id="frame-debug-btn">전송 진단 시작 (15초)</button>
+      </details>
+
+      <details>
+        <summary>수동 쿠키 입력 (고급)</summary>
+        <p class="settings-help">
+          브라우저 개발자 도구 → Application → Cookies에서
+          <code>NID_AUT</code>, <code>NID_SES</code> 값을 직접 붙여넣을 수도 있습니다.
+        </p>
+        <label>NID_AUT <input id="set-nid-aut" spellcheck="false" /></label>
+        <label>NID_SES <input id="set-nid-ses" spellcheck="false" /></label>
+        <button id="settings-save">저장</button>
+      </details>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
