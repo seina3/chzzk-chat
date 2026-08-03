@@ -1253,8 +1253,8 @@ function initHighlightDialog(): void {
 
 // ---------- 창 색 ----------
 
-/** 기본 배경색 — 모든 기본 프리셋이 함께 쓴다 (rgb 20 23 38) */
-const PRESET_BG = "#141726";
+/** 프리셋 배경색 — 앱 기본 창 배경(--bg-card, rgb 20 22 27)과 같게 둔다 */
+const PRESET_BG = "#14161b";
 
 /** 미리 준비해 둔 강조색 */
 const PRESET_ACCENTS = [
