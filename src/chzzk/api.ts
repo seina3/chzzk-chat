@@ -84,6 +84,42 @@ export async function getChatAccessToken(chatChannelId: string): Promise<string>
 }
 
 /**
+ * 이 채널에서 내가 모은 통나무 파워.
+ *
+ * 치지직 웹이 쓰는 것과 같은 조회 요청이다 (GET, 로그인 쿠키 필요).
+ * 적립은 서버가 알아서 하므로 여기서는 값만 읽어 온다.
+ * 응답의 필드 이름을 확인하지 못해, content 안에서 power/point가 붙은
+ * 숫자를 먼저 찾고 없으면 첫 번째 숫자를 쓴다.
+ */
+export async function getLogPower(channelId: string): Promise<number | null> {
+  if (!cookieHeader()) return null;
+  const c = await getContent<any>(
+    `${API_BASE}/service/v1/channels/${channelId}/log-power`,
+  ).catch(() => null);
+  return pickPower(c);
+}
+
+function pickPower(content: any): number | null {
+  if (content === null || content === undefined) return null;
+  if (typeof content === "number") return content;
+  if (typeof content !== "object") return null;
+
+  const entries = Object.entries(content);
+  const named = entries.find(
+    ([k, v]) => typeof v === "number" && /power|point/i.test(k),
+  );
+  if (named) return named[1] as number;
+  const anyNumber = entries.find(([, v]) => typeof v === "number");
+  if (anyNumber) return anyNumber[1] as number;
+  // 한 겹 더 들어가 있는 경우 (예: { logPower: { amount: 123 } })
+  for (const [, v] of entries) {
+    const nested = v && typeof v === "object" ? pickPower(v) : null;
+    if (nested !== null) return nested;
+  }
+  return null;
+}
+
+/**
  * 네이버 쿠키가 설정된 경우 로그인 유저의 치지직 프로필. 미로그인이면 null.
  * getUserStatus는 치지직 닉네임(userIdHash 포함)을 돌려준다.
  */

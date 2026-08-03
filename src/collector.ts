@@ -2,6 +2,7 @@ import {
   getChatAccessToken,
   getLiveDetail,
   getLiveStatus,
+  getLogPower,
   getUserStatus,
 } from "./chzzk/api";
 import { ChzzkChat, type ChatStatus } from "./chzzk/chat";
@@ -18,9 +19,13 @@ interface CollectorOptions {
   onStatus(channelId: string, status: ChannelStatus, detail?: string): void;
   /** 방송 정보 갱신. justStarted면 방금 방송이 시작된 것 */
   onLive(channelId: string, live: LiveInfo | null, justStarted: boolean): void;
+  /** 이 채널에서 내가 모은 통나무 파워 */
+  onLogPower(channelId: string, value: number): void;
 }
 
 const POLL_MS = 30_000;
+/** 통나무 파워는 자주 바뀌지 않아 5분에 한 번만 확인한다 */
+const LOG_POWER_MS = 300_000;
 
 /**
  * 등록된 모든 채널의 채팅을 동시에 수집한다.
@@ -34,6 +39,8 @@ export class ChatCollector {
   private statuses = new Map<string, ChannelStatus>();
   /** 접속 절차가 진행 중인 채널 (중복 접속 방지) */
   private busy = new Set<string>();
+  private logPowers = new Map<string, number>();
+  private logPowerAt = new Map<string, number>();
   private uid: string | null = null;
   private nickname = "";
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -59,6 +66,11 @@ export class ChatCollector {
 
   getStatus(channelId: string): ChannelStatus {
     return this.statuses.get(channelId) ?? "idle";
+  }
+
+  /** 마지막으로 확인한 통나무 파워 (아직 모르면 null) */
+  getLogPower(channelId: string): number | null {
+    return this.logPowers.get(channelId) ?? null;
   }
 
   isLive(channelId: string): boolean {
@@ -156,6 +168,7 @@ export class ChatCollector {
     }
     this.lives.set(channelId, live);
     this.opts.onLive(channelId, live, justStarted);
+    void this.pollLogPower(channelId, force || justStarted);
 
     const shouldCollect =
       getSettings().collectAll || this.viewing.has(channelId);
@@ -172,6 +185,21 @@ export class ChatCollector {
       return; // 이미 올바른 채팅방에 연결됨
     }
     await this.connect(channelId, live.chatChannelId);
+  }
+
+  /**
+   * 통나무 파워를 확인한다. 적립은 치지직이 알아서 하고, 우리는 값만 읽는다
+   * (5분 시청·팔로우·후원 등으로 늘어난 결과가 여기에 반영된다).
+   */
+  private async pollLogPower(channelId: string, force: boolean): Promise<void> {
+    if (!hasAuth()) return;
+    const last = this.logPowerAt.get(channelId) ?? 0;
+    if (!force && Date.now() - last < LOG_POWER_MS) return;
+    this.logPowerAt.set(channelId, Date.now());
+    const value = await getLogPower(channelId).catch(() => null);
+    if (value === null) return;
+    this.logPowers.set(channelId, value);
+    this.opts.onLogPower(channelId, value);
   }
 
   private async connect(channelId: string, chatChannelId: string): Promise<void> {

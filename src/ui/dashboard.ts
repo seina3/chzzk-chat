@@ -13,6 +13,7 @@ export class Dashboard {
   private categoryEl: HTMLElement;
   private viewersEl: HTMLElement;
   private uptimeEl: HTMLElement;
+  private powerEl: HTMLElement;
 
   private openDate: number | null = null;
   private uptimeTimer: ReturnType<typeof setInterval> | null = null;
@@ -27,6 +28,7 @@ export class Dashboard {
     this.categoryEl = pick("pane-category");
     this.viewersEl = pick("pane-viewers");
     this.uptimeEl = pick("pane-uptime");
+    this.powerEl = pick("pane-power");
   }
 
   setChannel(info: ChannelInfo): void {
@@ -39,6 +41,25 @@ export class Dashboard {
     }
     this.nameEl.textContent = info.channelName;
     this.update(null);
+  }
+
+  /** 통나무 파워 — 늘었으면 얼마나 늘었는지도 함께 알려 준다 */
+  setLogPower(value: number | null, delta: number | null): void {
+    if (value === null) {
+      this.powerEl.textContent = "";
+      return;
+    }
+    this.powerEl.textContent = `🪵 ${formatNumber(value)}`;
+    this.powerEl.title =
+      delta && delta > 0
+        ? `이 채널에서 모은 통나무 파워 (방금 +${formatNumber(delta)})`
+        : "이 채널에서 모은 통나무 파워";
+    if (delta && delta > 0) {
+      this.powerEl.classList.remove("bumped");
+      // 다시 애니메이션이 걸리도록 한 프레임 쉬었다 붙인다
+      void this.powerEl.offsetWidth;
+      this.powerEl.classList.add("bumped");
+    }
   }
 
   setName(name: string): void {

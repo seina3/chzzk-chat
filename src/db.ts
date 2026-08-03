@@ -90,6 +90,15 @@ export async function initDb(dbPath?: string): Promise<void> {
       PRIMARY KEY (user_id_hash, channel_id)
     )
   `);
+  // 채널별 통나무 파워 — 값이 바뀔 때마다 한 줄씩 남겨 늘어난 흐름을 본다
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS log_power (
+      channel_id TEXT NOT NULL,
+      value INTEGER NOT NULL,
+      checked_at INTEGER NOT NULL,
+      PRIMARY KEY (channel_id, checked_at)
+    )
+  `);
   await db.execute(
     `CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user_id_hash, msg_time DESC)`,
   );
@@ -644,7 +653,54 @@ export async function removeUserBlock(
   );
 }
 
-// ---------- 제재 기록 (통나무) ----------
+// ---------- 통나무 파워 ----------
+
+export interface LogPowerPoint {
+  value: number;
+  checked_at: number;
+}
+
+/** 가장 최근에 확인한 값 */
+export async function getLatestLogPower(
+  channelId: string,
+): Promise<LogPowerPoint | null> {
+  const rows = await requireDb().select<LogPowerPoint[]>(
+    `SELECT value, checked_at FROM log_power
+     WHERE channel_id = $1 ORDER BY checked_at DESC LIMIT 1`,
+    [channelId],
+  );
+  return rows[0] ?? null;
+}
+
+/** 값이 달라졌을 때만 한 줄 남긴다 */
+export async function recordLogPower(
+  channelId: string,
+  value: number,
+): Promise<number | null> {
+  const last = await getLatestLogPower(channelId);
+  if (last && last.value === value) return null;
+  await requireDb().execute(
+    `INSERT OR REPLACE INTO log_power (channel_id, value, checked_at)
+     VALUES ($1, $2, $3)`,
+    [channelId, value, Date.now()],
+  );
+  return last ? value - last.value : null;
+}
+
+/** 늘어난 흐름 (오래된 것부터) */
+export async function getLogPowerHistory(
+  channelId: string,
+  limit = 500,
+): Promise<LogPowerPoint[]> {
+  const rows = await requireDb().select<LogPowerPoint[]>(
+    `SELECT value, checked_at FROM log_power
+     WHERE channel_id = $1 ORDER BY checked_at DESC LIMIT $2`,
+    [channelId, limit],
+  );
+  return rows.reverse();
+}
+
+// ---------- 제재 기록 (통나무 채팅 로그) ----------
 
 /**
  * 한 유저가 제재당한 기록 — 클린봇·운영자에게 가려진 메시지와

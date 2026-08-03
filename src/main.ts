@@ -10,9 +10,11 @@ import { getChannelInfo, getUserStatus, parseChannelInput } from "./chzzk/api";
 import { ChatCollector } from "./collector";
 import {
   getChannelLastActivity,
+  getLatestLogPower,
   getRecentMessages,
   initDb,
   markMessageBlinded,
+  recordLogPower,
   saveMessage,
 } from "./db";
 import { channelName, loadChannelNames, noteChannelName } from "./channel-names";
@@ -98,6 +100,17 @@ const collector = new ChatCollector({
         ?.chat.addSystem(`🔴 방송이 시작되었습니다: ${live.liveTitle}`);
     }
     renderChannelList();
+  },
+  onLogPower: (channelId, value) => {
+    // 값이 달라졌을 때만 기록하고, 늘었으면 창에 알려 준다
+    void recordLogPower(channelId, value).then((delta) => {
+      panes.get(channelId)?.dash.setLogPower(value, delta);
+      if (delta && delta > 0) {
+        panes
+          .get(channelId)
+          ?.chat.addSystem(`🪵 통나무 파워 +${delta.toLocaleString("ko-KR")} (${value.toLocaleString("ko-KR")})`);
+      }
+    });
   },
 });
 
@@ -510,6 +523,13 @@ async function openChannel(channelId: string, mode: OpenMode): Promise<void> {
     followerCount: 0,
   });
   pane.dash.update(collector.getLive(channelId));
+  const power = collector.getLogPower(channelId);
+  if (power !== null) pane.dash.setLogPower(power, null);
+  else {
+    void getLatestLogPower(channelId).then((p) => {
+      if (p) panes.get(channelId)?.dash.setLogPower(p.value, null);
+    });
+  }
   renderPaneStatus(channelId);
 
   // 수집해 둔 최근 대화를 먼저 보여준다
