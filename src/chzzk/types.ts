@@ -50,5 +50,6 @@ export interface ChatMessage {
 export interface UserStatus {
   userIdHash: string;
   nickname: string;
+  profileImageUrl: string | null;
   loggedIn: boolean;
 }

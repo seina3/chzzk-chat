@@ -27,11 +27,9 @@ export interface PaneCallbacks {
   onOpenLive(channelId: string): void;
   /** 띄워 둔 창을 오른쪽에 붙이기 (팝업일 때만) */
   onDock(channelId: string): void;
-  /** 통나무 파워를 지금 다시 확인 */
-  onRefreshLogPower(channelId: string): void;
-  /** 모아 둔 통나무 파워 기록 보기 */
+  /** 통나무 파워 창 열기 (보유 파워 · 획득 기록) */
   onLogPowerHistory(channelId: string): void;
-  /** 뱃지 고르기 창 열기 */
+  /** 내 프로필 · 뱃지 고르기 창 열기 */
   onPickBadge(channelId: string): void;
 }
 
@@ -53,7 +51,8 @@ export class ChannelPane {
   private dockBtn: HTMLButtonElement;
   private powerBtn: HTMLButtonElement;
   private powerValueEl: HTMLElement;
-  private powerLogBtn: HTMLButtonElement;
+  private badgeImg: HTMLImageElement;
+  private badgeNoImg: HTMLElement;
   private streamerOnly = false;
 
   constructor(
@@ -111,14 +110,10 @@ export class ChannelPane {
     pick("pane-power-icon").innerHTML = logPowerIcon();
     this.powerBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      cb.onRefreshLogPower(channelId);
-    });
-    // 남은 기록이 생기기 전에는 눌러 봐야 빈 창이라 숨겨 둔다
-    this.powerLogBtn = pick<HTMLButtonElement>("pane-power-log");
-    this.powerLogBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
       cb.onLogPowerHistory(channelId);
     });
+    this.badgeImg = pick<HTMLImageElement>("pane-badge-img");
+    this.badgeNoImg = pick("pane-badge-noimg");
     pick<HTMLButtonElement>("pane-badge").addEventListener("click", (e) => {
       e.stopPropagation();
       cb.onPickBadge(channelId);
@@ -210,26 +205,28 @@ export class ChannelPane {
     this.el.classList.toggle("tinted", !!(style?.accent || style?.bg));
   }
 
-  /**
-   * 이 채널에서 모은 통나무 파워.
-   * 값만 읽어 보여 줄 뿐, 앱이 대신 수령하지는 않는다.
-   */
+  /** 채팅 입력칸 왼쪽에 둘 내 프로필 사진 */
+  setMyProfileImage(url: string | null): void {
+    this.badgeImg.classList.toggle("hidden", !url);
+    this.badgeNoImg.classList.toggle("hidden", !!url);
+    if (url) this.badgeImg.src = url;
+  }
+
+  /** 이 채널에서 모은 통나무 파워 */
   setLogPower(value: number | null, delta: number | null): void {
     this.powerValueEl.textContent = value === null ? "–" : formatNumber(value);
     this.powerBtn.title =
       value === null
-        ? "통나무 파워 (네이버 로그인 후 표시됩니다 · 눌러서 확인)"
+        ? "통나무 파워 (네이버 로그인 후 표시됩니다 · 눌러서 열기)"
         : delta && delta > 0
-          ? `통나무 파워 ${formatNumber(value)} (방금 +${formatNumber(delta)})`
-          : `통나무 파워 ${formatNumber(value)} · 눌러서 새로 확인`;
+          ? `통나무 파워 ${formatNumber(value)} (방금 +${formatNumber(delta)}) · 눌러서 기록 보기`
+          : `통나무 파워 ${formatNumber(value)} · 눌러서 기록 보기`;
     if (delta && delta > 0) {
       this.powerBtn.classList.remove("bumped");
       // 다시 애니메이션이 걸리도록 한 프레임 쉬었다 붙인다
       void this.powerBtn.offsetWidth;
       this.powerBtn.classList.add("bumped");
     }
-    // 값을 한 번이라도 읽었으면 그 시점이 기록으로 남아 있다
-    this.powerLogBtn.classList.toggle("hidden", value === null);
   }
 
   /** 최신 채팅으로 내린다 (분할 방식이 바뀌거나 창이 새로 붙었을 때) */

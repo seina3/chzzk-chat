@@ -9,7 +9,8 @@ import {
 import {
   activateBadges,
   getChannelInfo,
-  getMyBadges,
+  getLiveDetail,
+  getMyProfileCard,
   getUserStatus,
   parseChannelInput,
   type ChzzkBadge,
@@ -58,7 +59,13 @@ import {
 import { DonationsModal } from "./ui/donations";
 import { GlobalSearchModal } from "./ui/global-search";
 import { ChannelPane } from "./ui/pane";
-import { escapeHtml, formatDateTime, formatNumber } from "./ui/render";
+import { logPowerIcon } from "./ui/icons";
+import {
+  escapeHtml,
+  formatDateTime,
+  formatNumber,
+  nickColor,
+} from "./ui/render";
 import { UserHistoryModal } from "./ui/user-history";
 
 let notifyGranted = false;
@@ -554,6 +561,7 @@ async function openChannel(channelId: string, mode: OpenMode): Promise<void> {
     followerCount: 0,
   });
   pane.dash.update(collector.getLive(channelId));
+  pane.setMyProfileImage(loginProfileImage);
   const power = collector.getLogPower(channelId);
   if (power !== null) pane.setLogPower(power, null);
   else {
@@ -593,36 +601,39 @@ const paneCallbacks = {
   onStyle: (id: string) => openPaneStyle(id),
   onOpenLive: (id: string) => openChannelPage(id),
   onDock: (id: string) => void dockPane(id),
-  onRefreshLogPower: (id: string) => void refreshLogPower(id),
   onLogPowerHistory: (id: string) => void openLogPowerHistory(id),
   onPickBadge: (id: string) => void openBadgePicker(id),
 };
 
-/** 통나무 파워를 지금 다시 읽어 온다 (버튼을 눌렀을 때) */
-async function refreshLogPower(channelId: string): Promise<void> {
-  if (!hasAuth()) {
-    notify("통나무 파워는 네이버 로그인 후에 확인할 수 있습니다.");
-    return;
-  }
-  await collector.refreshLogPower(channelId).catch((e) => notify(`확인 실패: ${e}`));
-  const value = collector.getLogPower(channelId);
-  panes.get(channelId)?.setLogPower(value, null);
-}
+/** 통나무 파워 창이 지금 보고 있는 채널 */
+let powerChannelId: string | null = null;
 
 /**
- * 이 채널에서 통나무 파워가 어떻게 늘어 왔는지 보여준다.
+ * 보유 파워와 그동안의 획득 기록.
  * 값이 달라질 때마다 한 줄씩 남겨 둔 것을 최근 것부터 읽는다.
  */
 async function openLogPowerHistory(channelId: string): Promise<void> {
   const dialog = document.getElementById("power-modal") as HTMLDialogElement;
   const listEl = document.getElementById("power-log")!;
+  powerChannelId = channelId;
   document.getElementById("power-title")!.textContent =
-    `${channelName(channelId)} — 통나무 파워 기록`;
+    `${channelName(channelId)} — 통나무 파워`;
+  document.getElementById("power-hold-icon")!.innerHTML = logPowerIcon(16);
   listEl.innerHTML = `<div class="history-empty">불러오는 중…</div>`;
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
 
+  await renderPowerModal(channelId);
+}
+
+async function renderPowerModal(channelId: string): Promise<void> {
   const points = await getLogPowerHistory(channelId).catch(() => []);
-  if (!dialog.open) return;
+  if (powerChannelId !== channelId) return;
+
+  const held =
+    collector.getLogPower(channelId) ??
+    (points.length > 0 ? points[points.length - 1].value : null);
+  document.getElementById("power-hold-value")!.textContent =
+    held === null ? "–" : formatNumber(held);
   renderLogPowerHistory(points);
 }
 
@@ -636,7 +647,6 @@ function renderLogPowerHistory(points: LogPowerPoint[]): void {
   // 첫 줄은 그때까지 모아 둔 값이라 늘어난 몫을 알 수 없다
   const deltas = points.map((p, i) => (i === 0 ? null : p.value - points[i - 1].value));
   const gained = deltas.reduce<number>((sum, d) => (d && d > 0 ? sum + d : sum), 0);
-  const latest = points[points.length - 1];
 
   const rows = points
     .map((p, i) => {
@@ -660,8 +670,7 @@ function renderLogPowerHistory(points: LogPowerPoint[]): void {
 
   listEl.innerHTML =
     `<div class="power-sum">` +
-    `지금 <strong>${formatNumber(latest.value)}</strong>` +
-    ` · 기록이 시작된 뒤 <strong>+${formatNumber(gained)}</strong>` +
+    `기록이 시작된 뒤 <strong>+${formatNumber(gained)}</strong>` +
     ` · ${points.length}번 변했습니다` +
     `</div>` +
     rows;
@@ -672,6 +681,30 @@ function initPowerModal(): void {
   document
     .getElementById("power-close")!
     .addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => {
+    powerChannelId = null;
+  });
+
+  const refreshBtn = document.getElementById("power-refresh") as HTMLButtonElement;
+  refreshBtn.addEventListener("click", () => {
+    const channelId = powerChannelId;
+    if (!channelId) return;
+    if (!hasAuth()) {
+      notify("통나무 파워는 네이버 로그인 후에 확인할 수 있습니다.");
+      return;
+    }
+    refreshBtn.disabled = true;
+    void collector
+      .refreshLogPower(channelId)
+      .catch((e) => notify(`확인 실패: ${e}`))
+      .then(async () => {
+        panes.get(channelId)?.setLogPower(collector.getLogPower(channelId), null);
+        if (powerChannelId === channelId) await renderPowerModal(channelId);
+      })
+      .finally(() => {
+        refreshBtn.disabled = false;
+      });
+  });
 }
 
 function dockedPaneCount(): number {
@@ -1097,65 +1130,205 @@ function initSettingsModal(): void {
 /** 로그인 상태 변경을 반영 — 모든 채널을 새 권한으로 다시 연결 */
 function applyAuthChange(message: string): void {
   notify(message);
+  void refreshLoginNickname();
   void collector
     .reauth()
     .then(() => renderAllPaneStatus())
     .catch((e) => notify(`재접속 실패: ${e}`));
 }
 
-// ---------- 뱃지 고르기 ----------
+// ---------- 내 프로필 · 뱃지 고르기 ----------
 
 let badgeChannelId: string | null = null;
+let badgeChatId: string | null = null;
+/** 이 채널에서 쓰는 내 닉네임 (미리보기에 쓴다) */
+let badgeNickname = "";
+let badgeList: ChzzkBadge[] = [];
+const badgeOn = new Set<string>();
+/** 저장 요청이 겹치지 않도록 — 저장 중이면 마지막 상태만 한 번 더 보낸다 */
+let badgeSaving = false;
+let badgeQueued = false;
 
 /**
- * 이 채널에서 달 뱃지를 고른다.
- * 목록은 치지직의 프로필 카드에서 읽고, 고르면 웹의 ⭐ 버튼과 같은
- * 요청을 보내 저장한다 — 다른 사람 화면에도 그대로 반영된다.
+ * 이 채널에서의 내 프로필.
+ * 치지직 웹이 프로필을 열 때와 같은 조회로 팔로우 시작일·뱃지를 읽고,
+ * 뱃지를 켜고 끄면 웹과 같은 요청으로 바로 저장한다.
+ *
+ * 채팅방 ID는 방송이 켜져 있어야만 알 수 있는 값이 아니다 — 붙어 있는
+ * 연결에서, 없으면 이번 실행 중 확인해 둔 것에서, 그것도 없으면 상세
+ * 조회를 한 번 해서 얻는다. 그래서 방송이 꺼져 있어도 바꿀 수 있다.
  */
 async function openBadgePicker(channelId: string): Promise<void> {
   const dialog = document.getElementById("badge-modal") as HTMLDialogElement;
   const listEl = document.getElementById("badge-list")!;
-  const chatChannelId = collector.getChatChannelId(channelId);
   const uid = collector.getMyUid();
 
   if (!hasAuth() || !uid) {
     notify("뱃지를 바꾸려면 네이버 로그인이 필요합니다.");
     return;
   }
-  if (!chatChannelId) {
-    notify("방송이 켜져 채팅에 연결된 뒤에 뱃지를 바꿀 수 있습니다.");
-    return;
-  }
 
   badgeChannelId = channelId;
+  badgeChatId = null;
+  badgeList = [];
+  badgeOn.clear();
   document.getElementById("badge-title")!.textContent =
-    `${channelName(channelId)} — 뱃지 고르기`;
+    `${channelName(channelId)} — 사용 중인 프로필`;
+  document.getElementById("badge-state")!.textContent = "";
+  document.getElementById("badge-power-icon")!.innerHTML = logPowerIcon(14);
+  setBadgeProfile(loginNickname, loginProfileImage, null);
+  renderBadgePower(channelId);
+  document.getElementById("badge-preview")!.innerHTML = "";
   listEl.innerHTML = `<div class="history-empty">불러오는 중…</div>`;
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
 
-  const badges = await getMyBadges(chatChannelId, uid).catch(() => []);
+  const chatChannelId = await resolveChatChannelId(channelId);
   if (badgeChannelId !== channelId) return;
-  renderBadges(badges);
-}
-
-function renderBadges(badges: ChzzkBadge[]): void {
-  const listEl = document.getElementById("badge-list")!;
-  if (badges.length === 0) {
+  if (!chatChannelId) {
     listEl.innerHTML =
-      `<div class="history-empty">이 채널에서 쓸 수 있는 뱃지가 없습니다.</div>`;
+      `<div class="history-empty">이 채널의 채팅방을 찾지 못했습니다. 방송이 한 번 켜진 뒤에 다시 시도해 주세요.</div>`;
     return;
   }
-  listEl.innerHTML = badges
-    .map(
-      (b) =>
-        `<button class="badge-choice${b.activated ? " active" : ""}" data-badge="${escapeHtml(b.badgeId)}" title="${escapeHtml(b.badgeId)}">` +
-        (b.imageUrl
-          ? `<img src="${escapeHtml(b.imageUrl)}" alt="" loading="lazy">`
-          : `<span class="badge-noimg">?</span>`) +
+  badgeChatId = chatChannelId;
+
+  const card = await getMyProfileCard(chatChannelId, uid).catch(() => null);
+  if (badgeChannelId !== channelId) return;
+  if (!card) {
+    listEl.innerHTML =
+      `<div class="history-empty">프로필을 불러오지 못했습니다.</div>`;
+    return;
+  }
+
+  setBadgeProfile(
+    card.nickname || loginNickname,
+    card.profileImageUrl ?? loginProfileImage,
+    card.followDate,
+  );
+  badgeList = card.badges;
+  for (const b of badgeList) if (b.activated) badgeOn.add(b.badgeId);
+  renderBadges();
+}
+
+/** 붙어 있는 연결 → 확인해 둔 값 → 상세 조회 순으로 채팅방 ID를 찾는다 */
+async function resolveChatChannelId(channelId: string): Promise<string | null> {
+  const known = collector.getKnownChatChannelId(channelId);
+  if (known) return known;
+  const detail = await getLiveDetail(channelId).catch(() => null);
+  return detail?.chatChannelId ?? null;
+}
+
+function setBadgeProfile(
+  nickname: string | null,
+  imageUrl: string | null,
+  followDate: string | null,
+): void {
+  const img = document.getElementById("badge-avatar") as HTMLImageElement;
+  const noimg = document.getElementById("badge-avatar-noimg")!;
+  img.classList.toggle("hidden", !imageUrl);
+  noimg.classList.toggle("hidden", !!imageUrl);
+  if (imageUrl) img.src = imageUrl;
+  badgeNickname = nickname ?? "";
+  document.getElementById("badge-nick")!.textContent = badgeNickname;
+
+  const followEl = document.getElementById("badge-follow")!;
+  const day = followDate?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  followEl.classList.toggle("hidden", !day);
+  if (day) {
+    followEl.textContent =
+      `♥ ${day[1]}년 ${Number(day[2])}월 ${Number(day[3])}일 부터 팔로우`;
+  }
+}
+
+function renderBadgePower(channelId: string): void {
+  const value = collector.getLogPower(channelId);
+  const el = document.getElementById("badge-power-value")!;
+  el.textContent = value === null ? "–" : formatNumber(value);
+  if (value === null) {
+    void getLatestLogPower(channelId).then((p) => {
+      if (p && badgeChannelId === channelId) el.textContent = formatNumber(p.value);
+    });
+  }
+}
+
+/**
+ * 뱃지 목록. 치지직은 여러 개를 함께 달 수 있어, 누를 때마다
+ * 켜고 끄기만 하고 창은 열어 둔다.
+ */
+function renderBadges(): void {
+  const listEl = document.getElementById("badge-list")!;
+  if (badgeList.length === 0) {
+    listEl.innerHTML =
+      `<div class="history-empty">이 채널에서 쓸 수 있는 뱃지가 없습니다.</div>`;
+    renderBadgePreview();
+    return;
+  }
+  listEl.innerHTML = badgeList
+    .map((b) => {
+      const on = badgeOn.has(b.badgeId);
+      return (
+        `<button class="badge-choice${on ? " active" : ""}" data-badge="${escapeHtml(b.badgeId)}"` +
+        ` title="${escapeHtml(b.badgeId)}" aria-pressed="${on}">` +
+        badgeFaceHtml(b) +
         `<span class="badge-choice-name">${escapeHtml(b.title)}</span>` +
-        `</button>`,
-    )
+        (on ? `<span class="badge-check">✓</span>` : "") +
+        `</button>`
+      );
+    })
     .join("");
+  renderBadgePreview();
+}
+
+function badgeFaceHtml(b: ChzzkBadge): string {
+  return b.imageUrl
+    ? `<img src="${escapeHtml(b.imageUrl)}" alt="" loading="lazy">`
+    : `<span class="badge-noimg">?</span>`;
+}
+
+/** 고른 뱃지를 달면 채팅에 어떻게 보일지 */
+function renderBadgePreview(): void {
+  const el = document.getElementById("badge-preview")!;
+  const nick = badgeNickname || loginNickname || "나";
+  const uid = collector.getMyUid() ?? "";
+  const badges = badgeList
+    .filter((b) => badgeOn.has(b.badgeId))
+    .map((b) => `<span class="badge-preview-icon">${badgeFaceHtml(b)}</span>`)
+    .join("");
+  el.innerHTML =
+    badges +
+    `<span class="badge-preview-nick" style="color:${nickColor(uid)}">${escapeHtml(nick)}</span>`;
+}
+
+/**
+ * 지금 켜 둔 뱃지를 치지직에 저장한다.
+ * 빠르게 여러 번 눌러도 요청이 겹치지 않도록, 저장 중에는 마지막
+ * 상태만 한 번 더 보낸다.
+ */
+async function saveBadges(): Promise<void> {
+  const stateEl = document.getElementById("badge-state")!;
+  if (badgeSaving) {
+    badgeQueued = true;
+    return;
+  }
+  badgeSaving = true;
+  try {
+    do {
+      badgeQueued = false;
+      const channelId = badgeChannelId;
+      const chatChannelId = badgeChatId;
+      if (!channelId || !chatChannelId) return;
+      const ids = [...badgeOn];
+      stateEl.textContent = "저장 중…";
+      await activateBadges(chatChannelId, channelId, ids);
+      stateEl.textContent =
+        ids.length > 0
+          ? "저장했습니다 · 다음 채팅부터 보입니다"
+          : "뱃지를 떼었습니다";
+    } while (badgeQueued);
+  } catch (e) {
+    stateEl.textContent = `저장 실패: ${e}`;
+  } finally {
+    badgeSaving = false;
+  }
 }
 
 function initBadgeModal(): void {
@@ -1163,34 +1336,33 @@ function initBadgeModal(): void {
   document
     .getElementById("badge-close")!
     .addEventListener("click", () => dialog.close());
-
-  const apply = async (badgeIds: string[]) => {
-    const channelId = badgeChannelId;
-    const chatChannelId = channelId
-      ? collector.getChatChannelId(channelId)
-      : null;
-    if (!channelId || !chatChannelId) return;
-    dialog.close();
-    try {
-      await activateBadges(chatChannelId, channelId, badgeIds);
-      notify(
-        badgeIds.length > 0
-          ? "뱃지를 바꿨습니다. 다음 채팅부터 적용됩니다."
-          : "뱃지를 떼었습니다.",
-      );
-    } catch (e) {
-      notify(`뱃지 변경 실패: ${e}`);
-    }
-  };
+  // Esc로 닫는 경우도 있어 정리는 close에서 한다
+  dialog.addEventListener("close", () => {
+    badgeChannelId = null;
+    badgeChatId = null;
+  });
 
   document.getElementById("badge-list")!.addEventListener("click", (e) => {
     const id = (e.target as HTMLElement).closest<HTMLElement>("[data-badge]")
       ?.dataset.badge;
-    if (id) void apply([id]);
+    if (!id || !badgeChatId) return;
+    if (badgeOn.has(id)) badgeOn.delete(id);
+    else badgeOn.add(id);
+    renderBadges();
+    void saveBadges();
   });
-  document
-    .getElementById("badge-clear")!
-    .addEventListener("click", () => void apply([]));
+
+  document.getElementById("badge-clear")!.addEventListener("click", () => {
+    if (!badgeChatId || badgeOn.size === 0) return;
+    badgeOn.clear();
+    renderBadges();
+    void saveBadges();
+  });
+
+  // 프로필의 통나무 파워 줄을 누르면 그 채널의 파워 창으로 넘어간다
+  document.getElementById("badge-power")!.addEventListener("click", () => {
+    if (badgeChannelId) void openLogPowerHistory(badgeChannelId);
+  });
 }
 
 // ---------- 창 배치 ----------
@@ -1849,10 +2021,14 @@ async function main(): Promise<void> {
 
 /** 로그인 닉네임 (상태 표시용) */
 let loginNickname: string | null = null;
+/** 내 치지직 프로필 사진 — 채팅 입력칸 왼쪽 버튼에 쓴다 */
+let loginProfileImage: string | null = null;
 
 async function refreshLoginNickname(): Promise<void> {
   const user = hasAuth() ? await getUserStatus().catch(() => null) : null;
   loginNickname = user?.nickname ?? null;
+  loginProfileImage = user?.profileImageUrl ?? null;
+  for (const pane of panes.values()) pane.setMyProfileImage(loginProfileImage);
 }
 
 void main();

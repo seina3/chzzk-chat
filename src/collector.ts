@@ -36,6 +36,8 @@ const LOG_POWER_MS = 300_000;
 export class ChatCollector {
   private chats = new Map<string, ChzzkChat>();
   private chatChannelIds = new Map<string, string>();
+  /** 마지막으로 알아낸 채팅방 ID — 방송이 꺼진 뒤에도 남겨 둔다 */
+  private knownChatIds = new Map<string, string>();
   private lives = new Map<string, LiveInfo | null>();
   private statuses = new Map<string, ChannelStatus>();
   /** 접속 절차가 진행 중인 채널 (중복 접속 방지) */
@@ -71,9 +73,21 @@ export class ChatCollector {
     return this.statuses.get(channelId) ?? "idle";
   }
 
-  /** 지금 붙어 있는 채팅방 ID (뱃지 장착 등에 필요) */
+  /** 지금 붙어 있는 채팅방 ID */
   getChatChannelId(channelId: string): string | null {
     return this.chatChannelIds.get(channelId) ?? null;
+  }
+
+  /**
+   * 뱃지 장착처럼 채팅방 ID만 있으면 되는 일에 쓸 ID.
+   * 방송이 꺼져 연결이 끊긴 뒤에도 마지막으로 알아낸 것을 돌려준다.
+   */
+  getKnownChatChannelId(channelId: string): string | null {
+    return (
+      this.chatChannelIds.get(channelId) ??
+      this.knownChatIds.get(channelId) ??
+      null
+    );
   }
 
   /** 로그인한 내 userIdHash */
@@ -185,6 +199,7 @@ export class ChatCollector {
       live = { ...status, openDate: prev.openDate };
     }
     this.lives.set(channelId, live);
+    if (live.chatChannelId) this.knownChatIds.set(channelId, live.chatChannelId);
     this.opts.onLive(channelId, live, justStarted);
     void this.pollLogPower(channelId, force || justStarted);
 

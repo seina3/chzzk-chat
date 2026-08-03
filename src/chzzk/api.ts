@@ -181,29 +181,64 @@ export interface ChzzkBadge {
   activated: boolean;
 }
 
+export interface MyProfileCard {
+  nickname: string;
+  profileImageUrl: string | null;
+  /** "YYYY-MM-DD HH:mm:ss" — 이 채널을 팔로우한 날 (팔로우 안 했으면 null) */
+  followDate: string | null;
+  badges: ChzzkBadge[];
+}
+
 /**
- * 이 채널에서 내가 쓸 수 있는 뱃지 목록.
+ * 이 채널에서의 내 프로필 카드 — 닉네임·프로필 사진·팔로우 시작일과
+ * 쓸 수 있는 뱃지 목록.
  *
- * 치지직 웹이 ⭐ 팝업을 열 때 부르는 프로필 카드 조회를 그대로 쓴다.
- * 응답의 필드 이름을 문서로 확인할 수 없어, badgeId를 가진 객체를
- * 응답 전체에서 훑어 모은다 (수령 ID를 찾던 것과 같은 방식).
+ * 치지직 웹이 프로필을 열 때 부르는 것과 같은 조회다. 응답의 필드
+ * 이름을 문서로 확인할 수 없어, badgeId를 가진 객체를 응답 전체에서
+ * 훑어 모으고 나머지도 이름이 맞는 값을 찾아 쓴다.
  */
-export async function getMyBadges(
+export async function getMyProfileCard(
   chatChannelId: string,
   userIdHash: string,
-): Promise<ChzzkBadge[]> {
-  if (!cookieHeader()) return [];
+): Promise<MyProfileCard | null> {
+  if (!cookieHeader()) return null;
   const card = await getContent<unknown>(
     `${COMM_BASE}/v1/chats/${chatChannelId}/users/${userIdHash}/profile-card?chatType=STREAMING`,
   ).catch(() => null);
+  if (!card) return null;
   const found = new Map<string, ChzzkBadge>();
   collectBadges(card, "", found);
-  return [...found.values()];
+  return {
+    nickname: findByKey(card, /^nickname$/i) ?? "",
+    profileImageUrl: findByKey(card, /profileimage/i),
+    followDate: findByKey(card, /followdate/i),
+    badges: [...found.values()],
+  };
 }
 
 function pickString(o: Record<string, unknown>, re: RegExp): string | null {
   for (const [k, v] of Object.entries(o)) {
     if (typeof v === "string" && v && re.test(k)) return v;
+  }
+  return null;
+}
+
+/** 응답 어디에 있든 이름이 맞는 첫 문자열 값을 찾는다 */
+function findByKey(value: unknown, re: RegExp): string | null {
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      const hit = findByKey(v, re);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const o = value as Record<string, unknown>;
+  const here = pickString(o, re);
+  if (here) return here;
+  for (const v of Object.values(o)) {
+    const hit = findByKey(v, re);
+    if (hit) return hit;
   }
   return null;
 }
@@ -272,7 +307,12 @@ export async function getUserStatus(): Promise<UserStatus | null> {
   try {
     const c = await getContent<any>(`${COMM_BASE}/v1/user/getUserStatus`);
     if (!c || c.loggedIn === false || !c.userIdHash) return null;
-    return { userIdHash: c.userIdHash, nickname: c.nickname ?? "", loggedIn: true };
+    return {
+      userIdHash: c.userIdHash,
+      nickname: c.nickname ?? "",
+      profileImageUrl: c.profileImageUrl ?? null,
+      loggedIn: true,
+    };
   } catch {
     return null;
   }

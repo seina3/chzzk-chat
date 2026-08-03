@@ -95,13 +95,15 @@
         <div class="pane-status"></div>
 
         <div class="pane-input">
-          <button class="pane-power" title="이 채널에서 모은 통나무 파워 (눌러서 새로 확인)">
+          <button class="pane-power" title="이 채널에서 모은 통나무 파워 (눌러서 기록 보기)">
             <span class="pane-power-icon"></span>
             <span class="pane-power-value">–</span>
           </button>
-          <button class="pane-power-log hidden" title="통나무 파워 기록 보기">기록</button>
+          <button class="pane-badge" title="내 프로필 · 뱃지 고르기">
+            <img class="pane-badge-img hidden" alt="" />
+            <span class="pane-badge-noimg">☆</span>
+          </button>
           <input class="pane-text-input" disabled autocomplete="off" spellcheck="false" />
-          <button class="pane-badge" title="닉네임 옆에 달 뱃지 고르기">☆</button>
           <button class="pane-send" disabled>채팅</button>
         </div>
       </section>
@@ -189,29 +191,69 @@
 
     <dialog id="badge-modal">
       <div class="modal-header">
-        <h2 id="badge-title">뱃지 고르기</h2>
+        <h2 id="badge-title">사용 중인 프로필</h2>
         <button id="badge-close">×</button>
       </div>
-      <p class="settings-help">
-        이 채널에서 내 닉네임 옆에 보일 뱃지를 고릅니다.
-        치지직에 저장되는 설정이라 다른 사람 화면에도 그대로 보입니다.
-      </p>
-      <div id="badge-list" class="badge-grid"></div>
+
+      <div class="profile-card">
+        <div class="profile-top">
+          <img id="badge-avatar" class="profile-avatar hidden" alt="" />
+          <span id="badge-avatar-noimg" class="profile-avatar profile-avatar-noimg"></span>
+          <span id="badge-nick" class="profile-nick"></span>
+        </div>
+        <div id="badge-follow" class="profile-follow hidden"></div>
+        <button id="badge-power" class="profile-power">
+          <span id="badge-power-icon" class="profile-power-icon"></span>
+          <span class="profile-power-label">내 통나무 파워</span>
+          <span id="badge-power-value" class="profile-power-value">–</span>
+          <span class="profile-power-go">›</span>
+        </button>
+      </div>
+
+      <div class="profile-section">
+        <div class="profile-section-title">채팅 닉네임을 꾸며보세요</div>
+        <div id="badge-preview" class="badge-preview"></div>
+      </div>
+
+      <div class="profile-section">
+        <div class="profile-section-title">내 활동 배지 보여주기</div>
+        <p class="settings-help">
+          눌러서 켜고 끕니다. 여러 개를 함께 달 수 있고, 고른 즉시 치지직에 저장되어
+          다른 사람 화면에도 그대로 보입니다.
+        </p>
+        <div id="badge-list" class="badge-grid"></div>
+      </div>
+
       <div class="login-row">
         <button id="badge-clear">뱃지 없이 표시</button>
+        <span id="badge-state" class="badge-state"></span>
       </div>
     </dialog>
 
     <dialog id="power-modal">
       <div class="modal-header">
-        <h2 id="power-title">통나무 파워 기록</h2>
+        <h2 id="power-title">통나무 파워</h2>
         <button id="power-close">×</button>
       </div>
-      <p class="settings-help">
-        앱이 통나무 파워를 확인할 때 값이 달라져 있으면 한 줄씩 남깁니다.
-        앱을 켜 둔 동안 확인한 것만 남으므로, 치지직에서 직접 받은 것은 다음 확인 때 한꺼번에 잡힙니다.
-      </p>
-      <div id="power-log" class="power-log"></div>
+
+      <div class="power-hold">
+        <span id="power-hold-icon" class="power-hold-icon"></span>
+        <span class="power-hold-label">보유 파워</span>
+        <span id="power-hold-value" class="power-hold-value">–</span>
+      </div>
+
+      <div class="profile-section">
+        <div class="profile-section-title">획득 기록</div>
+        <p class="settings-help">
+          받을 수 있는 파워는 앱이 알아서 수령합니다. 값이 달라져 있을 때만 한 줄씩 남기므로,
+          치지직에서 직접 받은 것은 다음 확인 때 한꺼번에 잡힙니다.
+        </p>
+        <div id="power-log" class="power-log"></div>
+      </div>
+
+      <div class="login-row">
+        <button id="power-refresh">지금 새로 확인</button>
+      </div>
     </dialog>
 
     <dialog id="marks-modal">

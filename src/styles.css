@@ -1998,26 +1998,37 @@ textarea:focus {
   }
 }
 
-/* 통나무 파워 기록 — 값 옆에 붙는 작은 버튼과 그 창 */
+/* 통나무 파워 창 — 보유 파워와 획득 기록 */
 
-.pane-power-log {
-  flex-shrink: 0;
-  padding: 5px 8px;
-  border-radius: 999px;
-  background: none;
+.power-hold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
   border: 1px solid var(--border);
+}
+
+.power-hold-icon {
+  display: inline-flex;
   color: var(--text-dim);
-  font-size: 11px;
+}
+
+.power-hold-label {
+  flex: 1;
+  font-size: 13px;
   font-weight: 600;
 }
 
-.pane-power-log:hover {
-  color: var(--text);
-  background: var(--bg-hover);
+.power-hold-value {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .power-log {
-  max-height: 60vh;
+  max-height: 42vh;
   overflow-y: auto;
 }
 
@@ -2141,8 +2152,7 @@ textarea:focus {
 
   .pane-viewers,
   .pane-uptime,
-  .pane-power,
-  .pane-power-log {
+  .pane-power {
     font-size: 10.5px;
   }
 
@@ -2169,8 +2179,7 @@ textarea:focus {
 
   .pane-viewers,
   .pane-uptime,
-  .pane-power,
-  .pane-power-log {
+  .pane-power {
     font-size: 10px;
   }
 
@@ -2179,23 +2188,155 @@ textarea:focus {
   }
 }
 
-/* 뱃지 고르기 */
+/* 내 프로필 · 뱃지 고르기 */
 
+/* 채팅 입력칸 왼쪽의 동그란 내 프로필 사진 */
 .pane-badge {
   flex-shrink: 0;
-  background: none;
-  border: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
   color: var(--text-dim);
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
-  padding: 6px 8px;
-  border-radius: var(--radius-xs);
 }
 
 .pane-badge:hover:not(:disabled) {
   color: var(--streamer);
-  background: var(--bg-hover);
-  border-color: transparent;
+  border-color: color-mix(
+    in srgb,
+    var(--pane-accent, var(--accent)) 55%,
+    var(--border)
+  );
+}
+
+.pane-badge-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* 프로필 카드 — 사진 · 닉네임 · 팔로우 시작일 · 통나무 파워 */
+
+.profile-card {
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+}
+
+.profile-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: var(--border);
+}
+
+.profile-nick {
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-follow {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+.profile-power {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.profile-power-icon {
+  display: inline-flex;
+  color: var(--text-dim);
+}
+
+.profile-power-label {
+  flex: 1;
+  font-size: 12.5px;
+}
+
+.profile-power-value {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-power-go {
+  color: var(--text-dim);
+}
+
+/* 창 자체가 flex column이라 칸 사이 여백은 dialog의 gap이 맡는다 */
+.profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.profile-section-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+/* 고른 뱃지를 달면 채팅에 어떻게 보이는지 */
+
+.badge-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.badge-preview-icon img,
+.badge-preview-icon .badge-noimg {
+  width: 18px;
+  height: 18px;
+}
+
+.badge-preview-nick {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.badge-state {
+  align-self: center;
+  color: var(--text-dim);
+  font-size: 11.5px;
 }
 
 .badge-grid {
@@ -2203,11 +2344,19 @@ textarea:focus {
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 8px;
   overflow-y: auto;
-  min-height: 120px;
-  max-height: 46vh;
+  min-height: 96px;
+  max-height: 36vh;
+}
+
+/* 안내 문구는 칸 하나에 갇히지 않고 한 줄을 다 쓴다 */
+.badge-grid .history-empty {
+  grid-column: 1 / -1;
+  align-self: center;
+  padding: 20px 8px;
 }
 
 .badge-choice {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2216,6 +2365,23 @@ textarea:focus {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+
+/* 켜져 있는 뱃지에 붙는 체크 */
+.badge-check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #06231a;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .badge-choice:hover:not(:disabled) {
