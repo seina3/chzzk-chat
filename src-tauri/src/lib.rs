@@ -204,6 +204,40 @@ async fn chzzk_get(url: String, cookie: Option<String>) -> Result<String, String
     Ok(body)
 }
 
+/// 치지직 API PUT 요청 (본문 없음).
+/// 통나무 파워 보상 수령처럼 "누르면 되는" 동작에 쓴다.
+#[tauri::command]
+async fn chzzk_put(url: String, cookie: Option<String>) -> Result<String, String> {
+    let parsed: Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let host = parsed.host_str().unwrap_or_default();
+    if host != "api.chzzk.naver.com" {
+        return Err(format!("허용되지 않은 호스트: {host}"));
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut req = client
+        .put(parsed)
+        .header("Accept", "application/json")
+        .header("Content-Length", "0")
+        .header("Origin", "https://chzzk.naver.com")
+        .header("Referer", "https://chzzk.naver.com/");
+    if let Some(cookie) = cookie {
+        req = req.header("Cookie", cookie);
+    }
+
+    let res = req.send().await.map_err(|e| e.to_string())?;
+    let status = res.status().as_u16();
+    let body = res.text().await.map_err(|e| e.to_string())?;
+    if status >= 400 {
+        let snippet: String = body.chars().take(300).collect();
+        return Err(format!("HTTP {status}: {snippet}"));
+    }
+    Ok(body)
+}
+
 /// 로그 저장 기준 폴더: 사용자가 지정한 경로가 있으면 그 경로,
 /// 없으면 <앱 데이터>/logs
 fn resolve_log_base(
@@ -424,6 +458,7 @@ pub fn run() {
             naver_logout,
             append_chat_log,
             chzzk_get,
+            chzzk_put,
             get_default_log_dir,
             open_log_dir,
             open_url,

@@ -25,6 +25,8 @@ export interface PaneCallbacks {
   onOpenLive(channelId: string): void;
   /** 띄워 둔 창을 오른쪽에 붙이기 (팝업일 때만) */
   onDock(channelId: string): void;
+  /** 통나무 파워를 지금 확인·수령 */
+  onClaimLogPower(channelId: string): void;
 }
 
 /**
@@ -94,6 +96,10 @@ export class ChannelPane {
     this.liveEl.addEventListener("click", (e) => {
       e.stopPropagation();
       if (this.liveEl.classList.contains("on-air")) cb.onOpenLive(channelId);
+    });
+    pick<HTMLButtonElement>("pane-power").addEventListener("click", (e) => {
+      e.stopPropagation();
+      cb.onClaimLogPower(channelId);
     });
     this.streamerBtn.addEventListener("click", (e) => {
       e.stopPropagation();

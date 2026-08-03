@@ -101,14 +101,17 @@ const collector = new ChatCollector({
     }
     renderChannelList();
   },
-  onLogPower: (channelId, value) => {
+  onLogPower: (channelId, value, claimed) => {
     // 값이 달라졌을 때만 기록하고, 늘었으면 창에 알려 준다
     void recordLogPower(channelId, value).then((delta) => {
       panes.get(channelId)?.dash.setLogPower(value, delta);
       if (delta && delta > 0) {
+        const got = claimed > 0 ? ` — 보상 ${claimed}개 수령` : "";
         panes
           .get(channelId)
-          ?.chat.addSystem(`🪵 통나무 파워 +${delta.toLocaleString("ko-KR")} (${value.toLocaleString("ko-KR")})`);
+          ?.chat.addSystem(
+            `🪵 통나무 파워 +${delta.toLocaleString("ko-KR")} (${value.toLocaleString("ko-KR")})${got}`,
+          );
       }
     });
   },
@@ -559,7 +562,22 @@ const paneCallbacks = {
   onStyle: (id: string) => openPaneStyle(id),
   onOpenLive: (id: string) => openChannelPage(id),
   onDock: (id: string) => void dockPane(id),
+  onClaimLogPower: (id: string) => void claimNow(id),
 };
+
+/** 통나무 파워를 지금 확인하고 받을 수 있는 보상을 받는다 */
+async function claimNow(channelId: string): Promise<void> {
+  if (!hasAuth()) {
+    notify("통나무 파워는 네이버 로그인 후에 확인할 수 있습니다.");
+    return;
+  }
+  const before = collector.getLogPower(channelId);
+  await collector.claimLogPowerNow(channelId).catch((e) => notify(`확인 실패: ${e}`));
+  const after = collector.getLogPower(channelId);
+  if (after !== null && after === before) {
+    notify(`🪵 지금 받을 수 있는 통나무 파워 보상이 없습니다. (${after.toLocaleString("ko-KR")})`);
+  }
+}
 
 function dockedPaneCount(): number {
   return [...panes.values()].filter((p) => !p.floating).length;
@@ -718,6 +736,14 @@ function initSettingsModal(): void {
     notify(
       `로그를 ${logFormatSel.value === "csv" ? "csv" : "txt"} 형식으로 저장합니다.`,
     );
+  });
+
+  const autoClaimInput = document.getElementById(
+    "set-auto-claim",
+  ) as HTMLInputElement;
+  autoClaimInput.checked = getSettings().autoClaimLogPower;
+  autoClaimInput.addEventListener("change", () => {
+    saveSettings({ autoClaimLogPower: autoClaimInput.checked });
   });
 
   const notifyLiveInput = document.getElementById(

@@ -1891,6 +1891,16 @@ textarea:focus {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 1px 4px;
+  border-radius: var(--radius-xs);
+}
+
+.pane-power:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--streamer) 18%, transparent);
+  border-color: transparent;
+  color: var(--streamer);
 }
 
 .pane-power:empty {

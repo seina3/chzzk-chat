@@ -83,20 +83,69 @@ export async function getChatAccessToken(chatChannelId: string): Promise<string>
   return c.accessToken as string;
 }
 
+export interface LogPowerState {
+  /** 지금까지 모은 통나무 파워 */
+  power: number | null;
+  /** 아직 받지 않은 보상들의 수령 ID (예: FOLLOW-<uuid>) */
+  claims: string[];
+}
+
 /**
- * 이 채널에서 내가 모은 통나무 파워.
+ * 이 채널의 통나무 파워 현황.
  *
- * 치지직 웹이 쓰는 것과 같은 조회 요청이다 (GET, 로그인 쿠키 필요).
- * 적립은 서버가 알아서 하므로 여기서는 값만 읽어 온다.
- * 응답의 필드 이름을 확인하지 못해, content 안에서 power/point가 붙은
- * 숫자를 먼저 찾고 없으면 첫 번째 숫자를 쓴다.
+ * 치지직 웹이 쓰는 것과 같은 조회다 (GET, 로그인 쿠키 필요).
+ * 응답 구조를 문서로 확인할 수 없어, 필드 이름 대신 값의 생김새로 찾는다:
+ * 수령 ID는 "FOLLOW-<UUID>"처럼 대문자 종류 + UUID 꼴이라 구분이 확실하다.
  */
-export async function getLogPower(channelId: string): Promise<number | null> {
-  if (!cookieHeader()) return null;
+export async function getLogPowerState(
+  channelId: string,
+): Promise<LogPowerState> {
+  if (!cookieHeader()) return { power: null, claims: [] };
   const c = await getContent<any>(
     `${API_BASE}/service/v1/channels/${channelId}/log-power`,
   ).catch(() => null);
-  return pickPower(c);
+  return { power: pickPower(c), claims: findClaimIds(c) };
+}
+
+/** 하위 호환 — 값만 필요할 때 */
+export async function getLogPower(channelId: string): Promise<number | null> {
+  return (await getLogPowerState(channelId)).power;
+}
+
+const CLAIM_ID = /^[A-Z][A-Z0-9_]*-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** 응답 어디에 있든 수령 ID 꼴의 문자열을 모두 찾아낸다 */
+function findClaimIds(value: unknown, out = new Set<string>()): string[] {
+  if (typeof value === "string") {
+    if (CLAIM_ID.test(value)) out.add(value);
+  } else if (Array.isArray(value)) {
+    for (const v of value) findClaimIds(v, out);
+  } else if (value && typeof value === "object") {
+    for (const v of Object.values(value)) findClaimIds(v, out);
+  }
+  return [...out];
+}
+
+/**
+ * 보상 하나를 수령한다 (PUT, 본문 없음).
+ * 이미 받은 것을 다시 부르면 서버가 거절하므로 호출 쪽에서 한 번만 시도한다.
+ */
+export async function claimLogPower(
+  channelId: string,
+  claimId: string,
+): Promise<boolean> {
+  if (!cookieHeader()) return false;
+  if (!CLAIM_ID.test(claimId)) return false;
+  try {
+    await invoke<string>("chzzk_put", {
+      url: `${API_BASE}/service/v1/channels/${channelId}/log-power/claims/${claimId}`,
+      cookie: cookieHeader(),
+    });
+    return true;
+  } catch (e) {
+    console.warn("통나무 파워 수령 실패:", claimId, e);
+    return false;
+  }
 }
 
 function pickPower(content: any): number | null {

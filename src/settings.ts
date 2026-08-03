@@ -44,6 +44,8 @@ export interface Settings {
   paneLayout: PaneLayout;
   /** 채널별 창 색 설정 */
   paneStyles: Record<string, PaneStyle>;
+  /** 받을 수 있는 통나무 파워 보상을 자동으로 수령 */
+  autoClaimLogPower: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -60,6 +62,7 @@ const DEFAULT_SETTINGS: Settings = {
   openChannels: [],
   paneLayout: "columns",
   paneStyles: {},
+  autoClaimLogPower: true,
 };
 
 export interface SavedChannel {
