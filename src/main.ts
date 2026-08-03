@@ -1012,12 +1012,12 @@ function applyAuthChange(message: string): void {
 
 /**
  * 배치별로 붙여 둘 수 있는 창 수.
- * 세로분할은 좌우로 늘어놓아 3개가 넘으면 글이 너무 좁아지고,
- * 격자는 5×2(또는 2×5)인 10개까지 본다. 가로분할은 스크롤되므로 제한이 없다.
+ * 가로분할은 위아래로 쌓아 3개가 넘으면 한 창이 너무 납작해지고,
+ * 격자는 5×2(또는 2×5)인 10개까지 본다. 세로분할은 제한을 두지 않는다.
  */
 const PANE_LIMIT: Record<PaneLayout, number> = {
-  columns: 3,
-  rows: 99,
+  columns: 99,
+  rows: 3,
   grid: 10,
 };
 
