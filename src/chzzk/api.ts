@@ -257,11 +257,14 @@ function collectBadges(
 
   if (typeof o.badgeId === "string" && o.badgeId) {
     const prev = out.get(o.badgeId);
-    // 담겨 있던 자리 이름이나 객체 안의 참/거짓으로 장착 여부를 본다
+    // 담겨 있던 자리 이름이나 객체 안의 참/거짓으로 장착 여부를 본다.
+    // "activityBadges"(가진 뱃지 전부)에 걸리지 않도록 activ가 아니라
+    // activat까지 맞아야 장착으로 본다.
     const activated =
-      /activat|selected/i.test(key) ||
+      /activat|selected|wearing|current/i.test(key) ||
       Object.entries(o).some(
-        ([k, v]) => v === true && /activat|selected|used/i.test(k),
+        ([k, v]) =>
+          v === true && /activat|selected|using|used|wearing|expos/i.test(k),
       );
     out.set(o.badgeId, {
       badgeId: o.badgeId,
