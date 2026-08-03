@@ -72,7 +72,7 @@ export function renderContent(
 export function roleBadgeHtml(roleCode: string | null | undefined): string {
   switch (roleKind(roleCode)) {
     case "streamer":
-      return `<span class="badge badge-streamer" title="스트리머">방장</span>`;
+      return `<span class="badge badge-streamer" title="이 채널의 스트리머">스트리머</span>`;
     case "manager":
       return `<span class="badge badge-manager" title="매니저">매니저</span>`;
     default:
@@ -115,6 +115,17 @@ export function blindTagHtml(blind: string | null | undefined): string {
 /** 가려진 메시지 행에 붙일 클래스 */
 export function blindRowClass(blind: string | null | undefined): string {
   return blind ? ` blinded blind-${blind}` : "";
+}
+
+/** 내가 남긴 메모가 있으면 붙는 쪽지 표시 */
+export function noteTagHtml(note: string): string {
+  if (!note) return "";
+  return `<span class="note-tag" title="${escapeHtml(note)}">📝</span>`;
+}
+
+/** 강조 색을 지정한 유저의 줄에 붙일 인라인 스타일 */
+export function highlightStyle(color: string): string {
+  return color ? ` style="--mark:${escapeHtml(color)}"` : "";
 }
 
 export function formatTime(ms: number): string {

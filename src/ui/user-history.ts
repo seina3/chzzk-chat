@@ -1,6 +1,7 @@
 import {
   getUserChannelBreakdown,
   getUserMessages,
+  getUserModLog,
   getUserStats,
   type StoredMessage,
   type UserChannelBreakdown,
@@ -32,11 +33,15 @@ export class UserHistoryModal {
   private loadMoreBtn: HTMLButtonElement;
 
   private userIdHash = "";
+  private nickname = "";
   private oldestLoaded: number | undefined;
   private search = "";
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
-  private donationsOnly = false;
-  /** 집계 창에서 채널을 골라 둔 상태로 열었다면 그 채널만 본다 */
+  /** 채팅 / 후원 / 제재 기록(통나무) */
+  private mode: "all" | "donation" | "mod" = "all";
+  /** 이 창을 연 채널 — "이 채널만" 범위를 고를 수 있게 기억해 둔다 */
+  private originChannelId: string | undefined;
+  /** 지금 보고 있는 범위 (정해져 있으면 그 채널만) */
   private channelId: string | undefined;
   private stats: UserStats | null = null;
   private breakdown: UserChannelBreakdown[] = [];
@@ -58,13 +63,18 @@ export class UserHistoryModal {
       "#user-modal-tabs button",
     )) {
       btn.addEventListener("click", () => {
-        this.donationsOnly = btn.dataset.mode === "donation";
-        this.syncTabs();
-        this.searchInput.placeholder = this.donationsOnly
-          ? "후원 메시지 내용 검색…"
-          : "메시지 내용 검색…";
-        void this.loadBreakdown().then(() => this.renderStats());
-        void this.reload();
+        this.mode = btn.dataset.mode as "all" | "donation" | "mod";
+        void this.refresh();
+      });
+    }
+    // 통나무처럼 이 채널에서의 기록만 따로 볼 수 있게
+    for (const btn of document.querySelectorAll<HTMLButtonElement>(
+      "#user-modal-scope button",
+    )) {
+      btn.addEventListener("click", () => {
+        this.channelId =
+          btn.dataset.scope === "channel" ? this.originChannelId : undefined;
+        void this.refresh();
       });
     }
     this.searchInput.addEventListener("input", () => {
@@ -87,23 +97,39 @@ export class UserHistoryModal {
     channelId?: string,
   ): Promise<void> {
     this.userIdHash = userIdHash;
+    this.nickname = nickname;
+    this.originChannelId = channelId;
     this.channelId = channelId;
-    this.titleEl.textContent = channelId
-      ? `${nickname} — ${channelName(channelId)}`
-      : nickname;
     this.searchInput.value = "";
     this.search = "";
-    this.donationsOnly = donationsOnly;
-    this.syncTabs();
-    this.searchInput.placeholder = donationsOnly
-      ? "후원 메시지 내용 검색…"
-      : "메시지 내용 검색…";
+    this.mode = donationsOnly ? "donation" : "all";
     this.dialog.showModal();
+    await this.refresh();
+  }
 
-    this.stats = await getUserStats(userIdHash, channelId);
+  /** 탭이나 범위가 바뀔 때마다 제목·요약·목록을 다시 맞춘다 */
+  private async refresh(): Promise<void> {
+    this.titleEl.textContent = this.channelId
+      ? `${this.nickname} — ${channelName(this.channelId)}`
+      : this.nickname;
+    this.syncTabs();
+    this.searchInput.placeholder = this.searchHint();
+    this.stats = await getUserStats(this.userIdHash, this.channelId);
     await this.loadBreakdown();
     this.renderStats();
     await this.reload();
+  }
+
+  private get donationsOnly(): boolean {
+    return this.mode === "donation";
+  }
+
+  private searchHint(): string {
+    return this.mode === "donation"
+      ? "후원 메시지 내용 검색…"
+      : this.mode === "mod"
+        ? "제재 기록 검색…"
+        : "메시지 내용 검색…";
   }
 
   /** 채널별 분포 — 익명 후원처럼 사람을 구분할 수 없을 때 특히 유용 */
@@ -155,6 +181,13 @@ export class UserHistoryModal {
         ? ` · 금액 숨김 ${formatNumber(s.donationHidden)}건`
         : "";
 
+    if (this.mode === "mod") {
+      this.statsEl.innerHTML =
+        `가려진 메시지 ${formatNumber(s.blindedCount)}개 · 전체 채팅 ${formatNumber(s.count)}회${uid}` +
+        `<div class="settings-help">클린봇·운영자에게 가려지기 전의 원문을 그대로 보여줍니다.</div>`;
+      return;
+    }
+
     if (this.donationsOnly) {
       const total = `<span class="cheese">🧀 ${formatNumber(s.donationTotal)}</span>`;
       this.statsEl.innerHTML =
@@ -174,8 +207,12 @@ export class UserHistoryModal {
         ? ` · 후원 <span class="cheese">🧀 ${formatNumber(s.donationTotal)}</span>` +
           ` (${formatNumber(s.donationCount)}회${hidden})`
         : "";
+    const blinded =
+      s.blindedCount > 0
+        ? ` · <span class="blinded-count">가려짐 ${formatNumber(s.blindedCount)}개</span>`
+        : "";
     this.statsEl.innerHTML =
-      `총 채팅 ${formatNumber(s.count)}회${donation}${range}${uid}` +
+      `총 채팅 ${formatNumber(s.count)}회${donation}${blinded}${range}${uid}` +
       this.breakdownHtml() +
       aka;
   }
@@ -205,9 +242,19 @@ export class UserHistoryModal {
     for (const btn of document.querySelectorAll<HTMLButtonElement>(
       "#user-modal-tabs button",
     )) {
-      const isDonation = btn.dataset.mode === "donation";
-      btn.classList.toggle("active", isDonation === this.donationsOnly);
+      btn.classList.toggle("active", btn.dataset.mode === this.mode);
     }
+    // 채널을 알 수 없는 경로로 열었으면 범위를 고를 수 없다
+    const scopeRow = document.querySelector<HTMLElement>(".scope-row")!;
+    scopeRow.classList.toggle("hidden", !this.originChannelId);
+    for (const btn of document.querySelectorAll<HTMLButtonElement>(
+      "#user-modal-scope button",
+    )) {
+      const isChannel = btn.dataset.scope === "channel";
+      btn.classList.toggle("active", isChannel === !!this.channelId);
+    }
+    // 제재 기록은 검색 대신 통째로 보여 준다
+    this.searchInput.classList.toggle("hidden", this.mode === "mod");
   }
 
   private async reload(): Promise<void> {
@@ -217,13 +264,28 @@ export class UserHistoryModal {
   }
 
   private async loadPage(): Promise<void> {
-    const rows = await getUserMessages(this.userIdHash, {
-      before: this.oldestLoaded,
-      search: this.search || undefined,
-      donationsOnly: this.donationsOnly,
-      channelId: this.channelId,
-      limit: 100,
-    });
+    const rows =
+      this.mode === "mod"
+        ? await getUserModLog(this.userIdHash, this.channelId)
+        : await getUserMessages(this.userIdHash, {
+            before: this.oldestLoaded,
+            search: this.search || undefined,
+            donationsOnly: this.donationsOnly,
+            channelId: this.channelId,
+            limit: 100,
+          });
+    if (this.mode === "mod") {
+      for (const row of rows) this.listEl.appendChild(this.renderRow(row));
+      this.loadMoreBtn.classList.add("hidden");
+      if (rows.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "history-empty";
+        empty.textContent =
+          "가려지거나 제재된 기록이 없습니다. (수집 중에 일어난 것만 남습니다)";
+        this.listEl.appendChild(empty);
+      }
+      return;
+    }
     if (rows.length > 0) {
       this.oldestLoaded = rows[rows.length - 1].msg_time;
     }

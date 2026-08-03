@@ -24,6 +24,13 @@
           <span class="sep">·</span>
           <button data-order="name">가나다순</button>
         </div>
+        <div class="sidebar-order" id="pane-layout">
+          <button data-layout="columns" title="창을 좌우로 늘어놓기">세로분할</button>
+          <span class="sep">·</span>
+          <button data-layout="rows" title="창을 위아래로 쌓기">가로분할</button>
+          <span class="sep">·</span>
+          <button data-layout="grid" title="창을 상하좌우 격자로 배치">격자</button>
+        </div>
         <ul id="channel-list"></ul>
         <div class="sidebar-footer">
           <button id="open-search"><span class="ico">🔍</span><span class="lbl">검색</span></button>
@@ -43,7 +50,18 @@
       </main>
     </div>
 
+    <div id="pane-float-layer"></div>
     <div id="toast" class="hidden"></div>
+
+    <ul id="user-menu" class="context-menu hidden">
+      <li data-action="history">채팅 내역 보기</li>
+      <li data-action="donations">🧀 후원 내역 보기</li>
+      <li data-action="note">📝 메모하기</li>
+      <li data-action="highlight">🎨 강조 표시</li>
+      <li data-action="block-channel">🚫 이 채널에서 차단</li>
+      <li class="danger" data-action="block-all">🚫 모든 채널에서 차단</li>
+      <li data-action="unblock">차단 해제</li>
+    </ul>
 
     <template id="pane-template">
       <section class="pane">
@@ -61,7 +79,12 @@
               <span class="pane-category"></span>
             </div>
           </div>
-          <button class="pane-close" title="이 창 닫기" aria-label="닫기">×</button>
+          <div class="pane-tools">
+            <button class="pane-streamer" title="스트리머 채팅만 보기">🎙</button>
+            <button class="pane-style" title="이 창의 색 바꾸기">🎨</button>
+            <button class="pane-dock hidden" title="오른쪽에 붙이기">📌</button>
+            <button class="pane-close" title="이 창 닫기" aria-label="닫기">×</button>
+          </div>
         </header>
 
         <div class="pane-chat">
@@ -81,6 +104,7 @@
     <ul id="channel-menu" class="context-menu hidden">
       <li data-action="show">이 채널만 보기</li>
       <li data-action="add-pane">옆에 함께 보기</li>
+      <li data-action="popup">따로 띄우기 (팝업)</li>
       <li data-action="open">치지직에서 열기</li>
       <li data-action="copy">채널 링크 복사</li>
       <li data-action="rename">별명 바꾸기</li>
@@ -102,6 +126,67 @@
       </div>
     </dialog>
 
+    <dialog id="note-modal">
+      <div class="modal-header">
+        <h2 id="note-title">메모</h2>
+        <button id="note-close">×</button>
+      </div>
+      <p class="settings-help">나만 보는 메모입니다. 채팅에 📝 표시가 붙고, 올려 두면 내용이 보입니다.</p>
+      <textarea id="note-input" rows="4" placeholder="예: 자주 오는 사람, 저번에 후원함…"></textarea>
+      <div class="login-row">
+        <button id="note-save" class="naver-btn">저장</button>
+        <button id="note-clear">메모 지우기</button>
+      </div>
+    </dialog>
+
+    <dialog id="highlight-modal">
+      <div class="modal-header">
+        <h2 id="highlight-title">강조 표시</h2>
+        <button id="highlight-close">×</button>
+      </div>
+      <p class="settings-help">이 유저의 채팅 줄에 고른 색을 입혀 눈에 띄게 합니다.</p>
+      <div id="highlight-swatches" class="swatches"></div>
+      <div class="color-row">
+        <label>직접 고르기 <input type="color" id="highlight-color" value="#ff9f43" /></label>
+        <button id="highlight-clear">강조 없애기</button>
+      </div>
+    </dialog>
+
+    <dialog id="pane-style-modal">
+      <div class="modal-header">
+        <h2 id="pane-style-title">창 색</h2>
+        <button id="pane-style-close">×</button>
+      </div>
+      <p class="settings-help">창마다 색을 달리 해 두면 여러 채널을 열어 두어도 헷갈리지 않습니다.</p>
+      <div id="pane-style-presets" class="swatches"></div>
+      <div class="color-row">
+        <label>강조색 <input type="color" id="pane-accent" value="#00e6a1" /></label>
+        <label>배경색 <input type="color" id="pane-bg" value="#14161b" /></label>
+        <label>글자색 <input type="color" id="pane-text" value="#edeef1" /></label>
+      </div>
+      <label class="range-row">
+        <span>불투명도</span>
+        <input type="range" id="pane-opacity" min="30" max="100" step="1" value="100" />
+        <span id="pane-opacity-val">100%</span>
+      </label>
+      <div class="login-row">
+        <button id="pane-style-reset">기본값으로</button>
+      </div>
+    </dialog>
+
+    <dialog id="marks-modal">
+      <div class="modal-header">
+        <h2>표시한 유저</h2>
+        <button id="marks-close">×</button>
+      </div>
+      <div id="marks-tabs" class="seg">
+        <button data-tab="note" class="active">📝 메모</button>
+        <button data-tab="highlight">🎨 강조</button>
+        <button data-tab="block">🚫 차단</button>
+      </div>
+      <div id="marks-list"></div>
+    </dialog>
+
     <dialog id="user-modal">
       <div class="modal-header">
         <h2 id="user-modal-title"></h2>
@@ -109,8 +194,16 @@
       </div>
       <div id="user-modal-stats"></div>
       <div id="user-modal-tabs" class="seg">
-        <button data-mode="all" class="active">채팅 내역 (후원 포함)</button>
-        <button data-mode="donation">🧀 후원 내역</button>
+        <button data-mode="all" class="active">채팅 내역</button>
+        <button data-mode="donation">🧀 후원</button>
+        <button data-mode="mod">🚫 제재 기록</button>
+      </div>
+      <div class="scope-row">
+        <span>범위</span>
+        <div id="user-modal-scope" class="seg">
+          <button data-scope="channel">이 채널만</button>
+          <button data-scope="all" class="active">전체 채널</button>
+        </div>
       </div>
       <input id="user-modal-search" placeholder="메시지 내용 검색…" spellcheck="false" />
       <div id="user-modal-list"></div>
@@ -122,10 +215,14 @@
         <h2>전체 검색</h2>
         <button id="search-close">×</button>
       </div>
-      <div class="search-tabs">
+      <div class="search-tabs seg">
         <button id="search-tab-user" class="active">유저</button>
         <button id="search-tab-chat">채팅 내용</button>
+        <button id="search-tab-streamer">🎙 스트리머</button>
       </div>
+      <select id="search-channel" class="hidden">
+        <option value="">전체 채널</option>
+      </select>
       <input id="search-input" placeholder="닉네임 또는 유저 ID 검색… (과거 닉네임 포함)" spellcheck="false" />
       <div id="search-results"></div>
       <button id="search-more" class="hidden">더 보기</button>
@@ -202,6 +299,9 @@
       <p class="settings-help" id="db-dir-note">
         폴더를 바꾸면 지금까지의 기록을 새 위치로 복사하고, 앱을 다시 시작해야 적용됩니다.
       </p>
+      <div class="login-row">
+        <button id="open-marks">표시한 유저 관리 (메모·강조·차단)</button>
+      </div>
       <div class="login-row">
         <button id="naver-login-btn" class="naver-btn">N 네이버 아이디로 로그인</button>
         <button id="naver-logout-btn" class="hidden">로그아웃</button>

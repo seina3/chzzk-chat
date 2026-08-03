@@ -40,6 +40,8 @@ export interface UserStats {
   donationCount: number;
   /** 그중 금액이 숨겨져 액수를 알 수 없는 후원 횟수 */
   donationHidden: number;
+  /** 클린봇·운영자에게 가려진 메시지 수 */
+  blindedCount: number;
 }
 
 /** dbPath를 주면 그 파일을, 없으면 앱 기본 위치의 chzzk.db를 연다 */
@@ -66,6 +68,26 @@ export async function initDb(dbPath?: string): Promise<void> {
       name TEXT NOT NULL,
       image_url TEXT,
       updated_at INTEGER NOT NULL
+    )
+  `);
+  // 내가 붙여 둔 표시 — 메모와 강조 색
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS user_marks (
+      user_id_hash TEXT PRIMARY KEY,
+      nickname TEXT,
+      note TEXT,
+      highlight TEXT,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+  // 차단 — channel_id가 빈 문자열이면 모든 채널에서 숨긴다
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS user_blocks (
+      user_id_hash TEXT NOT NULL,
+      channel_id TEXT NOT NULL DEFAULT '',
+      nickname TEXT,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (user_id_hash, channel_id)
     )
   `);
   await db.execute(
@@ -542,6 +564,141 @@ export async function getChannelsWithData(): Promise<string[]> {
   return rows.map((r) => r.channel_id);
 }
 
+// ---------- 유저 표시 (메모 · 강조 · 차단) ----------
+
+export interface UserMark {
+  user_id_hash: string;
+  nickname: string | null;
+  note: string | null;
+  highlight: string | null;
+  updated_at: number;
+}
+
+export interface UserBlock {
+  user_id_hash: string;
+  /** 빈 문자열이면 모든 채널에서 차단 */
+  channel_id: string;
+  nickname: string | null;
+  created_at: number;
+}
+
+export async function getUserMarks(): Promise<UserMark[]> {
+  return requireDb().select<UserMark[]>(
+    `SELECT * FROM user_marks
+     WHERE (note IS NOT NULL AND note != '') OR (highlight IS NOT NULL AND highlight != '')
+     ORDER BY updated_at DESC`,
+  );
+}
+
+/** 메모나 강조 색을 저장한다. 둘 다 비면 행을 지운다 */
+export async function saveUserMark(
+  userIdHash: string,
+  nickname: string,
+  note: string,
+  highlight: string,
+): Promise<void> {
+  const d = requireDb();
+  if (!note && !highlight) {
+    await d.execute(`DELETE FROM user_marks WHERE user_id_hash = $1`, [
+      userIdHash,
+    ]);
+    return;
+  }
+  await d.execute(
+    `INSERT INTO user_marks (user_id_hash, nickname, note, highlight, updated_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT(user_id_hash) DO UPDATE SET
+       nickname = excluded.nickname,
+       note = excluded.note,
+       highlight = excluded.highlight,
+       updated_at = excluded.updated_at`,
+    [userIdHash, nickname || null, note || null, highlight || null, Date.now()],
+  );
+}
+
+export async function getUserBlocks(): Promise<UserBlock[]> {
+  return requireDb().select<UserBlock[]>(
+    `SELECT * FROM user_blocks ORDER BY created_at DESC`,
+  );
+}
+
+export async function addUserBlock(
+  userIdHash: string,
+  channelId: string,
+  nickname: string,
+): Promise<void> {
+  await requireDb().execute(
+    `INSERT OR REPLACE INTO user_blocks (user_id_hash, channel_id, nickname, created_at)
+     VALUES ($1, $2, $3, $4)`,
+    [userIdHash, channelId, nickname || null, Date.now()],
+  );
+}
+
+export async function removeUserBlock(
+  userIdHash: string,
+  channelId: string,
+): Promise<void> {
+  await requireDb().execute(
+    `DELETE FROM user_blocks WHERE user_id_hash = $1 AND channel_id = $2`,
+    [userIdHash, channelId],
+  );
+}
+
+// ---------- 제재 기록 (통나무) ----------
+
+/**
+ * 한 유저가 제재당한 기록 — 클린봇·운영자에게 가려진 메시지와
+ * 채팅 제한 같은 안내를 모은다. 가려지기 전의 원문이 그대로 남아 있어
+ * 어떤 발언 때문이었는지 볼 수 있다.
+ */
+export async function getUserModLog(
+  userIdHash: string,
+  channelId?: string,
+  limit = 100,
+): Promise<StoredMessage[]> {
+  const params: unknown[] = [userIdHash];
+  let where = "user_id_hash = $1 AND (blind IS NOT NULL OR msg_type = 'system')";
+  if (channelId) {
+    params.push(channelId);
+    where += ` AND channel_id = $${params.length}`;
+  }
+  params.push(limit);
+  return requireDb().select<StoredMessage[]>(
+    `SELECT * FROM messages WHERE ${where}
+     ORDER BY msg_time DESC LIMIT $${params.length}`,
+    params,
+  );
+}
+
+// ---------- 스트리머 채팅 모아보기 ----------
+
+/** 스트리머가 직접 친 채팅만 모아 본다. 최신순 페이지네이션 */
+export async function getStreamerMessages(
+  opts: { channelId?: string; search?: string; before?: number; limit?: number } = {},
+): Promise<StoredMessage[]> {
+  const limit = opts.limit ?? 100;
+  const params: unknown[] = [];
+  let where = "role_code = 'streamer'";
+  if (opts.channelId) {
+    params.push(opts.channelId);
+    where += ` AND channel_id = $${params.length}`;
+  }
+  if (opts.search) {
+    params.push(`%${opts.search}%`);
+    where += ` AND content LIKE $${params.length}`;
+  }
+  if (opts.before !== undefined) {
+    params.push(opts.before);
+    where += ` AND msg_time < $${params.length}`;
+  }
+  params.push(limit);
+  return requireDb().select<StoredMessage[]>(
+    `SELECT * FROM messages WHERE ${where}
+     ORDER BY msg_time DESC LIMIT $${params.length}`,
+    params,
+  );
+}
+
 /** 채널별 마지막 채팅 시각 — 방송 기록이 없을 때의 "최신순" 대용 */
 export async function getChannelLastActivity(): Promise<Map<string, number>> {
   const rows = await requireDb().select<
@@ -654,6 +811,7 @@ export async function getUserStats(
       donation_total: number | null;
       donation_count: number;
       donation_hidden: number;
+      blinded: number;
     }[]
   >(
     `SELECT COUNT(*) AS cnt,
@@ -662,7 +820,8 @@ export async function getUserStats(
             COALESCE(SUM(CASE WHEN msg_type = 'donation' THEN pay_amount END), 0)
               AS donation_total,
             SUM(CASE WHEN msg_type = 'donation' THEN 1 ELSE 0 END) AS donation_count,
-            SUM(CASE WHEN amount_hidden = 1 THEN 1 ELSE 0 END) AS donation_hidden
+            SUM(CASE WHEN amount_hidden = 1 THEN 1 ELSE 0 END) AS donation_hidden,
+            SUM(CASE WHEN blind IS NOT NULL THEN 1 ELSE 0 END) AS blinded
      FROM messages WHERE ${where}`,
     params,
   );
@@ -684,5 +843,6 @@ export async function getUserStats(
     donationTotal: r?.donation_total ?? 0,
     donationCount: r?.donation_count ?? 0,
     donationHidden: r?.donation_hidden ?? 0,
+    blindedCount: r?.blinded ?? 0,
   };
 }

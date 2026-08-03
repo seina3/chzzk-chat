@@ -1,11 +1,18 @@
 import type { ChatMessage } from "../chzzk/types";
 import type { StoredMessage } from "../db";
 import {
+  highlightOf,
+  isBlocked,
+  noteOf,
+  rememberNickname,
+} from "../marks";
+import {
   blindTagHtml,
   donationTierClass,
   escapeHtml,
   formatTime,
   nickColorFor,
+  noteTagHtml,
   renderContent,
   roleBadgeHtml,
   roleRowClass,
@@ -23,6 +30,13 @@ export class ChatView {
     container: HTMLElement,
     scrollBtn: HTMLButtonElement,
     private onUserClick: (userIdHash: string, nickname: string) => void,
+    /** 닉네임 우클릭 — 메모·강조·차단 메뉴 */
+    private onUserContext?: (
+      userIdHash: string,
+      nickname: string,
+      x: number,
+      y: number,
+    ) => void,
   ) {
     this.container = container;
     this.scrollBtn = scrollBtn;
@@ -32,6 +46,19 @@ export class ChatView {
       if (nick?.dataset.uid) {
         this.onUserClick(nick.dataset.uid, nick.textContent ?? "");
       }
+    });
+
+    this.container.addEventListener("contextmenu", (e) => {
+      const nick = (e.target as HTMLElement).closest<HTMLElement>(".nick");
+      if (!nick?.dataset.uid || !this.onUserContext) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.onUserContext(
+        nick.dataset.uid,
+        nick.textContent ?? "",
+        e.clientX,
+        e.clientY,
+      );
     });
 
     this.container.addEventListener("scroll", () => {
@@ -52,6 +79,12 @@ export class ChatView {
     this.container.innerHTML = "";
     this.autoScroll = true;
     this.scrollBtn.classList.add("hidden");
+  }
+
+  /** 스트리머가 친 채팅만 남겨 보기 (그리는 내용은 그대로, 화면에서만 거른다) */
+  setStreamerOnly(on: boolean): void {
+    this.container.classList.toggle("only-streamer", on);
+    if (on) this.scrollToBottom();
   }
 
   addSystem(text: string): void {
@@ -91,6 +124,10 @@ export class ChatView {
   }
 
   add(m: ChatMessage): void {
+    // 차단한 유저의 메시지는 화면에만 감춘다 (수집·저장은 그대로)
+    if (isBlocked(m.userIdHash, m.channelId)) return;
+    rememberNickname(m.userIdHash, m.nickname);
+
     // 같은 유저·같은 시각의 메시지는 한 번만 (내 메시지 직접 표시 + 서버 반향 중복 방지)
     if (
       m.userIdHash !== "anonymous" &&
@@ -122,6 +159,13 @@ export class ChatView {
         ? `msg donation ${donationTierClass(m.payAmount ?? 0)}`
         : "msg") + roleRowClass(m.roleCode);
     if (m.blind) row.classList.add("blinded", `blind-${m.blind}`);
+
+    // 내가 색을 지정해 둔 유저
+    const mark = highlightOf(m.userIdHash);
+    if (mark) {
+      row.classList.add("marked");
+      row.style.setProperty("--mark", mark);
+    }
     const blindTag = blindTagHtml(m.blind);
 
     // 채널이 금액 숨기기를 켜 두면 액수 없이 후원만 알 수 있다
@@ -138,6 +182,7 @@ export class ChatView {
       donationTag +
       roleBadgeHtml(m.roleCode) +
       subBadgeHtml(m.subscriptionBadgeUrl, m.subscriptionMonth) +
+      noteTagHtml(noteOf(m.userIdHash)) +
       `<span class="nick" data-uid="${escapeHtml(m.userIdHash)}" style="color:${nickColorFor(m.userIdHash, m.roleCode)}">${escapeHtml(m.nickname)}</span>` +
       `<span class="content">${renderContent(m.content, m.emojis)}</span>`;
 

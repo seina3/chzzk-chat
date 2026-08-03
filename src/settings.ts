@@ -4,6 +4,21 @@ export type LogFormat = "txt" | "csv";
 /** 사이드바 채널 정렬 방식 */
 export type ChannelOrder = "manual" | "name" | "recent";
 
+/** 채널 창 배치 — 세로 분할(좌우로 늘어놓기) / 가로 분할(위아래) / 격자 */
+export type PaneLayout = "columns" | "rows" | "grid";
+
+/** 채널 창마다 지정할 수 있는 색 */
+export interface PaneStyle {
+  /** 강조색 — 테두리·머리글·전송 버튼 */
+  accent?: string;
+  /** 창 배경색 */
+  bg?: string;
+  /** 글자색 */
+  text?: string;
+  /** 창 전체 불투명도 (0.3 ~ 1) */
+  opacity?: number;
+}
+
 export interface Settings {
   nidAut: string;
   nidSes: string;
@@ -25,6 +40,10 @@ export interface Settings {
   sidebarCollapsed: boolean;
   /** 나란히 열어 둔 채널들 (다음 실행 때 그대로 복원) */
   openChannels: string[];
+  /** 채널 창 배치 */
+  paneLayout: PaneLayout;
+  /** 채널별 창 색 설정 */
+  paneStyles: Record<string, PaneStyle>;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -39,6 +58,8 @@ const DEFAULT_SETTINGS: Settings = {
   channelOrder: "manual",
   sidebarCollapsed: false,
   openChannels: [],
+  paneLayout: "columns",
+  paneStyles: {},
 };
 
 export interface SavedChannel {

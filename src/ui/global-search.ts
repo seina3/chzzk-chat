@@ -1,9 +1,13 @@
 import {
+  getChannelsWithData,
+  getStreamerMessages,
   searchMessages,
   searchUsers,
   type StoredMessage,
 } from "../db";
-import { channelName } from "../channel-names";
+import { channelName, resolveUnknownChannelNames } from "../channel-names";
+import { highlightOf, noteOf } from "../marks";
+import { getChannels } from "../settings";
 import {
   blindRowClass,
   blindTagHtml,
@@ -13,12 +17,13 @@ import {
   formatNumber,
   nickColor,
   nickColorFor,
+  noteTagHtml,
   renderContent,
   roleBadgeHtml,
   roleRowClass,
 } from "./render";
 
-type SearchMode = "user" | "chat";
+type SearchMode = "user" | "chat" | "streamer";
 
 /**
  * 전체 검색 모달.
@@ -32,6 +37,8 @@ export class GlobalSearchModal {
   private moreBtn: HTMLButtonElement;
   private tabUser: HTMLButtonElement;
   private tabChat: HTMLButtonElement;
+  private tabStreamer: HTMLButtonElement;
+  private channelSel: HTMLSelectElement;
 
   private mode: SearchMode = "user";
   private oldestLoaded: number | undefined;
@@ -46,12 +53,20 @@ export class GlobalSearchModal {
     this.moreBtn = document.getElementById("search-more") as HTMLButtonElement;
     this.tabUser = document.getElementById("search-tab-user") as HTMLButtonElement;
     this.tabChat = document.getElementById("search-tab-chat") as HTMLButtonElement;
+    this.tabStreamer = document.getElementById(
+      "search-tab-streamer",
+    ) as HTMLButtonElement;
+    this.channelSel = document.getElementById(
+      "search-channel",
+    ) as HTMLSelectElement;
 
     document.getElementById("search-close")!.addEventListener("click", () => {
       this.dialog.close();
     });
     this.tabUser.addEventListener("click", () => this.setMode("user"));
     this.tabChat.addEventListener("click", () => this.setMode("chat"));
+    this.tabStreamer.addEventListener("click", () => this.setMode("streamer"));
+    this.channelSel.addEventListener("change", () => void this.reload());
     this.input.addEventListener("input", () => {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => void this.reload(), 300);
@@ -69,17 +84,40 @@ export class GlobalSearchModal {
   open(): void {
     this.dialog.showModal();
     this.input.focus();
-    if (this.input.value.trim()) void this.reload();
+    void this.fillChannels();
+    if (this.mode === "streamer" || this.input.value.trim()) void this.reload();
+  }
+
+  /** 스트리머 모아보기에서 쓸 채널 목록 (기록만 남은 채널까지) */
+  private async fillChannels(): Promise<void> {
+    const current = this.channelSel.value;
+    const registered = getChannels().map((c) => c.channelId);
+    const withData = await getChannelsWithData().catch(() => []);
+    const ids = [...new Set([...registered, ...withData])];
+    await resolveUnknownChannelNames(ids).catch(() => false);
+    this.channelSel.innerHTML = `<option value="">전체 채널</option>`;
+    for (const id of ids) {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = channelName(id);
+      this.channelSel.appendChild(opt);
+    }
+    this.channelSel.value = current;
   }
 
   private setMode(mode: SearchMode): void {
     this.mode = mode;
     this.tabUser.classList.toggle("active", mode === "user");
     this.tabChat.classList.toggle("active", mode === "chat");
+    this.tabStreamer.classList.toggle("active", mode === "streamer");
+    // 스트리머 모아보기는 검색어가 없어도 목록이 나온다
+    this.channelSel.classList.toggle("hidden", mode !== "streamer");
     this.input.placeholder =
       mode === "user"
         ? "닉네임 또는 유저 ID 검색… (과거 닉네임 포함)"
-        : "채팅 내용 검색…";
+        : mode === "chat"
+          ? "채팅 내용 검색…"
+          : "스트리머 채팅 안에서 검색… (비워 두면 전체)";
     void this.reload();
   }
 
@@ -91,7 +129,7 @@ export class GlobalSearchModal {
     this.resultsEl.innerHTML = "";
     this.oldestLoaded = undefined;
     this.moreBtn.classList.add("hidden");
-    if (!this.query()) return;
+    if (this.mode !== "streamer" && !this.query()) return;
     if (this.mode === "user") {
       await this.loadUsers();
     } else {
@@ -129,15 +167,28 @@ export class GlobalSearchModal {
 
   private async loadChatPage(): Promise<void> {
     const q = this.query();
-    const rows = await searchMessages(q, { before: this.oldestLoaded, limit: 100 });
-    if (this.query() !== q || this.mode !== "chat") return;
+    const mode = this.mode;
+    const rows =
+      mode === "streamer"
+        ? await getStreamerMessages({
+            search: q || undefined,
+            channelId: this.channelSel.value || undefined,
+            before: this.oldestLoaded,
+            limit: 100,
+          })
+        : await searchMessages(q, { before: this.oldestLoaded, limit: 100 });
+    if (this.query() !== q || this.mode !== mode) return;
     if (rows.length > 0) {
       this.oldestLoaded = rows[rows.length - 1].msg_time;
     }
     for (const row of rows) this.resultsEl.appendChild(this.renderChatRow(row));
     this.moreBtn.classList.toggle("hidden", rows.length < 100);
     if (rows.length === 0 && this.resultsEl.childElementCount === 0) {
-      this.empty("일치하는 채팅이 없습니다.");
+      this.empty(
+        mode === "streamer"
+          ? "저장된 스트리머 채팅이 없습니다. (권한 정보를 남기기 시작한 이후의 채팅만 모입니다)"
+          : "일치하는 채팅이 없습니다.",
+      );
     }
   }
 
@@ -146,7 +197,12 @@ export class GlobalSearchModal {
     el.className =
       (row.msg_type === "donation"
         ? `history-row donation ${donationTierClass(row.pay_amount ?? 0)}`
-        : "history-row") + blindRowClass(row.blind) + roleRowClass(row.role_code);
+        : "history-row") +
+      blindRowClass(row.blind) +
+      roleRowClass(row.role_code) +
+      (highlightOf(row.user_id_hash) ? " marked" : "");
+    const mark = highlightOf(row.user_id_hash);
+    if (mark) el.style.setProperty("--mark", mark);
     let emojis: Record<string, string> = {};
     try {
       if (row.emojis) emojis = JSON.parse(row.emojis);
@@ -166,6 +222,7 @@ export class GlobalSearchModal {
       blindTagHtml(row.blind) +
       cheese +
       roleBadgeHtml(row.role_code) +
+      noteTagHtml(noteOf(row.user_id_hash)) +
       `<span class="nick" data-uid="${escapeHtml(row.user_id_hash)}" data-nick="${escapeHtml(row.nickname)}" style="color:${nickColorFor(row.user_id_hash, row.role_code)}">${escapeHtml(row.nickname)}</span> ` +
       `<span class="content">${renderContent(row.content, emojis)}</span>`;
     return el;

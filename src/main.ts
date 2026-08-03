@@ -18,6 +18,19 @@ import {
 import { channelName, loadChannelNames, noteChannelName } from "./channel-names";
 import { logMessage, noteLive, resetSessions } from "./logger";
 import {
+  allBlocks,
+  allMarks,
+  block,
+  blockedChannels,
+  highlightOf,
+  knownNickname,
+  loadMarks,
+  noteOf,
+  onMarksChanged,
+  setMark,
+  unblock,
+} from "./marks";
+import {
   displayName,
   getChannels,
   getSettings,
@@ -27,6 +40,8 @@ import {
   sortChannels,
   type ChannelOrder,
   type LogFormat,
+  type PaneLayout,
+  type PaneStyle,
   type SavedChannel,
 } from "./settings";
 import { DonationsModal } from "./ui/donations";
@@ -159,12 +174,13 @@ function renderChannelList(): void {
       if ((e.target as HTMLElement).classList.contains("channel-remove")) {
         void removeChannel(ch.channelId);
       } else {
-        // Ctrl(⌘)을 누르고 누르면 지금 창을 두고 옆에 함께 연다
-        void openChannel(ch.channelId, !(e.ctrlKey || e.metaKey));
+        // Ctrl(⌘)을 누르면 옆에 나란히, 그냥 누르면 상황에 맞게
+        // (창이 하나면 바꿔 열고, 여럿이면 팝업으로 띄운다)
+        void openChannel(ch.channelId, e.ctrlKey || e.metaKey ? "add" : "auto");
       }
     });
     li.addEventListener("auxclick", (e) => {
-      if (e.button === 1) void openChannel(ch.channelId, false);
+      if (e.button === 1) void openChannel(ch.channelId, "add");
     });
     li.addEventListener("contextmenu", (e) => {
       e.preventDefault();
@@ -296,10 +312,13 @@ function initChannelMenu(): void {
     const url = `https://chzzk.naver.com/live/${channelId}`;
     switch (action) {
       case "show":
-        void openChannel(channelId, true);
+        void openChannel(channelId, "replace");
         break;
       case "add-pane":
-        void openChannel(channelId, false);
+        void openChannel(channelId, "add");
+        break;
+      case "popup":
+        void openChannel(channelId, "popup");
         break;
       case "open":
         invoke("open_url", { url }).catch((err) =>
@@ -414,7 +433,7 @@ async function addChannel(input: string): Promise<void> {
   }
   renderChannelList();
   await collector.syncChannel(channelId);
-  await openChannel(channelId, true);
+  await openChannel(channelId, "replace");
 }
 
 // ---------- 채널 창 ----------
@@ -426,19 +445,31 @@ let focusedChannelId: string | null = null;
 
 const panesEl = document.getElementById("panes")!;
 const panesEmptyEl = document.getElementById("panes-empty")!;
+const floatLayerEl = document.getElementById("pane-float-layer")!;
+
+/**
+ * 창을 어떤 식으로 열지.
+ * - replace: 다른 창을 닫고 이 채널만
+ * - add: 오른쪽에 나란히 붙이기
+ * - popup: 화면 위에 띄우기 (옮길 수 있는 작은 창)
+ * - auto: 열린 창이 하나뿐이면 replace, 여럿이면 popup
+ */
+type OpenMode = "replace" | "add" | "popup" | "auto";
 
 /** 열린 창 목록을 저장해 다음 실행 때 그대로 복원한다 */
 function saveOpenChannels(): void {
-  saveSettings({ openChannels: [...panes.keys()] });
+  // 띄워 둔 팝업은 임시로 보는 것이라 복원 목록에 넣지 않는다
+  const docked = [...panes].filter(([, p]) => !p.floating).map(([id]) => id);
+  saveSettings({ openChannels: docked });
   collector.viewing = new Set(panes.keys());
 }
 
-/**
- * 채널 창을 연다.
- * replace면 다른 창을 모두 닫고 이 채널만, 아니면 오른쪽에 나란히 붙인다.
- */
-async function openChannel(channelId: string, replace: boolean): Promise<void> {
-  if (replace) {
+async function openChannel(channelId: string, mode: OpenMode): Promise<void> {
+  const dockedCount = [...panes.values()].filter((p) => !p.floating).length;
+  const resolved: Exclude<OpenMode, "auto"> =
+    mode !== "auto" ? mode : dockedCount > 1 ? "popup" : "replace";
+
+  if (resolved === "replace") {
     for (const id of [...panes.keys()]) {
       if (id !== channelId) closePane(id, false);
     }
@@ -448,22 +479,25 @@ async function openChannel(channelId: string, replace: boolean): Promise<void> {
     setFocusedPane(channelId);
     existing.el.scrollIntoView({ behavior: "smooth", inline: "nearest" });
     // 다른 창을 닫았다면 그 결과도 저장해 둔다
-    if (replace) {
+    if (resolved === "replace") {
       saveOpenChannels();
       renderChannelList();
     }
     return;
   }
 
-  const pane = new ChannelPane(channelId, {
-    onClose: (id) => closePane(id, true),
-    onSend: (id, text) => void sendTo(id, text),
-    onUserClick: (uid, nick) => void userModal.open(uid, nick),
-    onFocus: (id) => setFocusedPane(id),
-  });
+  const floating = resolved === "popup";
+  const pane = new ChannelPane(channelId, paneCallbacks, floating);
   panes.set(channelId, pane);
-  panesEl.appendChild(pane.el);
-  panesEmptyEl.classList.add("hidden");
+  if (floating) {
+    pane.placeAt([...panes.values()].filter((p) => p.floating).length - 1);
+    floatLayerEl.appendChild(pane.el);
+  } else {
+    panesEl.appendChild(pane.el);
+  }
+  pane.applyStyle(getSettings().paneStyles[channelId]);
+  panesEmptyEl.classList.toggle("hidden", dockedPaneCount() > 0);
+  applyPaneLayout();
   setFocusedPane(channelId);
   saveOpenChannels();
   renderChannelList();
@@ -488,6 +522,37 @@ async function openChannel(channelId: string, replace: boolean): Promise<void> {
   renderPaneStatus(channelId);
 }
 
+const paneCallbacks = {
+  onClose: (id: string) => closePane(id, true),
+  onSend: (id: string, text: string) => void sendTo(id, text),
+  // 통나무처럼, 창에서 누른 닉네임은 그 채널에서의 기록부터 보여준다
+  onUserClick: (uid: string, nick: string, channelId: string) =>
+    void userModal.open(uid, nick, false, channelId),
+  onUserContext: (
+    uid: string,
+    nick: string,
+    channelId: string,
+    x: number,
+    y: number,
+  ) => openUserMenu(uid, nick, channelId, x, y),
+  onFocus: (id: string) => setFocusedPane(id),
+  onStyle: (id: string) => openPaneStyle(id),
+  onOpenLive: (id: string) => openChannelPage(id),
+  onDock: (id: string) => void dockPane(id),
+};
+
+function dockedPaneCount(): number {
+  return [...panes.values()].filter((p) => !p.floating).length;
+}
+
+/** 띄워 둔 팝업을 오른쪽에 붙은 창으로 바꾼다 */
+async function dockPane(channelId: string): Promise<void> {
+  const pane = panes.get(channelId);
+  if (!pane || !pane.floating) return;
+  closePane(channelId, false);
+  await openChannel(channelId, "add");
+}
+
 function closePane(channelId: string, persist: boolean): void {
   const pane = panes.get(channelId);
   if (!pane) return;
@@ -497,11 +562,18 @@ function closePane(channelId: string, persist: boolean): void {
     focusedChannelId = panes.keys().next().value ?? null;
     if (focusedChannelId) panes.get(focusedChannelId)!.setFocused(true);
   }
-  panesEmptyEl.classList.toggle("hidden", panes.size > 0);
+  panesEmptyEl.classList.toggle("hidden", dockedPaneCount() > 0);
+  applyPaneLayout();
   if (persist) {
     saveOpenChannels();
     renderChannelList();
   }
+}
+
+function openChannelPage(channelId: string): void {
+  invoke("open_url", { url: `https://chzzk.naver.com/live/${channelId}` }).catch(
+    (e) => notify(`채널을 열지 못했습니다: ${e}`),
+  );
 }
 
 function setFocusedPane(channelId: string): void {
@@ -596,7 +668,7 @@ function initPaneDrop(): void {
     dragChannelId = null;
     if (!id) return;
     e.preventDefault();
-    void openChannel(id, false);
+    void openChannel(id, "add");
   });
 }
 
@@ -826,6 +898,405 @@ function applyAuthChange(message: string): void {
     .catch((e) => notify(`재접속 실패: ${e}`));
 }
 
+// ---------- 창 배치 ----------
+
+function applyPaneLayout(): void {
+  const layout = getSettings().paneLayout;
+  panesEl.classList.remove("layout-columns", "layout-rows", "layout-grid");
+  panesEl.classList.add(`layout-${layout}`);
+  // 격자는 창 수에 따라 열 수를 정한다 (2개면 2열, 5~9개면 3열…)
+  const n = Math.max(1, dockedPaneCount());
+  panesEl.style.setProperty("--cols", String(Math.ceil(Math.sqrt(n))));
+  for (const btn of document.querySelectorAll<HTMLButtonElement>(
+    "#pane-layout button",
+  )) {
+    btn.classList.toggle("active", btn.dataset.layout === layout);
+  }
+}
+
+function initPaneLayout(): void {
+  for (const btn of document.querySelectorAll<HTMLButtonElement>(
+    "#pane-layout button",
+  )) {
+    btn.addEventListener("click", () => {
+      saveSettings({ paneLayout: btn.dataset.layout as PaneLayout });
+      applyPaneLayout();
+    });
+  }
+  applyPaneLayout();
+}
+
+// ---------- 유저 우클릭 메뉴 (메모 · 강조 · 차단) ----------
+
+/** 지금 메뉴가 가리키는 유저 */
+let menuUser: { uid: string; nick: string; channelId: string } | null = null;
+
+function openUserMenu(
+  uid: string,
+  nick: string,
+  channelId: string,
+  x: number,
+  y: number,
+): void {
+  const menu = document.getElementById("user-menu")!;
+  menuUser = { uid, nick, channelId };
+  const blocked = blockedChannels(uid);
+  menu
+    .querySelector<HTMLElement>('[data-action="unblock"]')!
+    .classList.toggle("hidden", blocked.length === 0);
+  menu
+    .querySelector<HTMLElement>('[data-action="block-channel"]')!
+    .classList.toggle("hidden", blocked.includes(channelId) || blocked.includes(""));
+  menu
+    .querySelector<HTMLElement>('[data-action="block-all"]')!
+    .classList.toggle("hidden", blocked.includes(""));
+
+  menu.classList.remove("hidden");
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 8)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - rect.height - 8)}px`;
+}
+
+function closeUserMenu(): void {
+  document.getElementById("user-menu")!.classList.add("hidden");
+  menuUser = null;
+}
+
+function initUserMenu(): void {
+  const menu = document.getElementById("user-menu")!;
+  menu.addEventListener("click", (e) => {
+    const action = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
+      ?.dataset.action;
+    const target = menuUser;
+    closeUserMenu();
+    if (!action || !target) return;
+    const { uid, nick, channelId } = target;
+
+    switch (action) {
+      case "history":
+        void userModal.open(uid, nick);
+        break;
+      case "donations":
+        void userModal.open(uid, nick, true);
+        break;
+      case "note":
+        openNoteDialog(uid, nick);
+        break;
+      case "highlight":
+        openHighlightDialog(uid, nick);
+        break;
+      case "block-channel":
+        void block(uid, channelId, nick).then(() =>
+          notify(`${nick} 님을 ${channelName(channelId)} 채널에서 차단했습니다.`),
+        );
+        break;
+      case "block-all":
+        void block(uid, "", nick).then(() =>
+          notify(`${nick} 님을 모든 채널에서 차단했습니다.`),
+        );
+        break;
+      case "unblock":
+        void Promise.all(
+          blockedChannels(uid).map((c) => unblock(uid, c)),
+        ).then(() => notify(`${nick} 님의 차단을 해제했습니다.`));
+        break;
+    }
+  });
+  window.addEventListener("click", (e) => {
+    if (!menu.contains(e.target as Node)) closeUserMenu();
+  });
+  window.addEventListener("blur", closeUserMenu);
+}
+
+// ---------- 메모 ----------
+
+let noteUser: { uid: string; nick: string } | null = null;
+
+function openNoteDialog(uid: string, nick: string): void {
+  const dialog = document.getElementById("note-modal") as HTMLDialogElement;
+  const input = document.getElementById("note-input") as HTMLTextAreaElement;
+  noteUser = { uid, nick };
+  document.getElementById("note-title")!.textContent = `${nick} 메모`;
+  input.value = noteOf(uid);
+  dialog.showModal();
+  input.focus();
+}
+
+function initNoteDialog(): void {
+  const dialog = document.getElementById("note-modal") as HTMLDialogElement;
+  const input = document.getElementById("note-input") as HTMLTextAreaElement;
+  const save = (text: string) => {
+    if (noteUser) void setMark(noteUser.uid, noteUser.nick, { note: text });
+    dialog.close();
+  };
+  document
+    .getElementById("note-close")!
+    .addEventListener("click", () => dialog.close());
+  document
+    .getElementById("note-save")!
+    .addEventListener("click", () => save(input.value.trim()));
+  document.getElementById("note-clear")!.addEventListener("click", () => save(""));
+}
+
+// ---------- 강조 색 ----------
+
+const MARK_COLORS = [
+  "#ff6b6b", "#ff9f43", "#ffd93d", "#6bcB77", "#4dd4c4",
+  "#4d9fff", "#9b7bff", "#ff7bd5", "#b0bec5", "#ffffff",
+];
+
+let highlightUser: { uid: string; nick: string } | null = null;
+
+function openHighlightDialog(uid: string, nick: string): void {
+  const dialog = document.getElementById("highlight-modal") as HTMLDialogElement;
+  const picker = document.getElementById("highlight-color") as HTMLInputElement;
+  highlightUser = { uid, nick };
+  document.getElementById("highlight-title")!.textContent = `${nick} 강조 표시`;
+  const cur = highlightOf(uid);
+  if (cur) picker.value = cur;
+  const swatches = document.getElementById("highlight-swatches")!;
+  swatches.innerHTML = MARK_COLORS.map(
+    (c) =>
+      `<button class="swatch${c === cur ? " active" : ""}" data-color="${c}" style="background:${c}" title="${c}"></button>`,
+  ).join("");
+  dialog.showModal();
+}
+
+function initHighlightDialog(): void {
+  const dialog = document.getElementById("highlight-modal") as HTMLDialogElement;
+  const picker = document.getElementById("highlight-color") as HTMLInputElement;
+  const apply = (color: string) => {
+    if (highlightUser) {
+      void setMark(highlightUser.uid, highlightUser.nick, { highlight: color });
+    }
+    dialog.close();
+  };
+  document
+    .getElementById("highlight-close")!
+    .addEventListener("click", () => dialog.close());
+  document
+    .getElementById("highlight-swatches")!
+    .addEventListener("click", (e) => {
+      const c = (e.target as HTMLElement).closest<HTMLElement>("[data-color]")
+        ?.dataset.color;
+      if (c) apply(c);
+    });
+  picker.addEventListener("change", () => apply(picker.value));
+  document
+    .getElementById("highlight-clear")!
+    .addEventListener("click", () => apply(""));
+}
+
+// ---------- 창 색 ----------
+
+/** 창 색 미리 준비해 둔 조합 (강조색, 배경색) */
+const PANE_PRESETS: [string, string][] = [
+  ["#00e6a1", "#14161b"],
+  ["#4d9fff", "#121722"],
+  ["#ff7bd5", "#1c1420"],
+  ["#ff9f43", "#1d1812"],
+  ["#9b7bff", "#171426"],
+  ["#ffd93d", "#1d1b12"],
+  ["#ff6b6b", "#1e1416"],
+  ["#b0bec5", "#15171a"],
+];
+
+let styleChannelId: string | null = null;
+
+function paneStyleOf(channelId: string): PaneStyle {
+  return getSettings().paneStyles[channelId] ?? {};
+}
+
+function savePaneStyle(channelId: string, patch: PaneStyle | null): void {
+  const styles = { ...getSettings().paneStyles };
+  if (patch === null) delete styles[channelId];
+  else styles[channelId] = { ...styles[channelId], ...patch };
+  saveSettings({ paneStyles: styles });
+  panes.get(channelId)?.applyStyle(patch === null ? undefined : styles[channelId]);
+}
+
+function openPaneStyle(channelId: string): void {
+  const dialog = document.getElementById("pane-style-modal") as HTMLDialogElement;
+  styleChannelId = channelId;
+  document.getElementById("pane-style-title")!.textContent =
+    `${channelName(channelId)} 창 색`;
+
+  const st = paneStyleOf(channelId);
+  (document.getElementById("pane-accent") as HTMLInputElement).value =
+    st.accent ?? "#00e6a1";
+  (document.getElementById("pane-bg") as HTMLInputElement).value =
+    st.bg ?? "#14161b";
+  (document.getElementById("pane-text") as HTMLInputElement).value =
+    st.text ?? "#edeef1";
+  const opacity = Math.round((st.opacity ?? 1) * 100);
+  (document.getElementById("pane-opacity") as HTMLInputElement).value =
+    String(opacity);
+  document.getElementById("pane-opacity-val")!.textContent = `${opacity}%`;
+
+  document.getElementById("pane-style-presets")!.innerHTML = PANE_PRESETS.map(
+    ([accent, bg]) =>
+      `<button class="swatch${accent === st.accent ? " active" : ""}" data-accent="${accent}" data-bg="${bg}" ` +
+      `style="background:${bg};border-color:${accent}" title="${accent}">` +
+      `<span style="background:${accent}"></span></button>`,
+  ).join("");
+
+  dialog.showModal();
+}
+
+function initPaneStyleDialog(): void {
+  const dialog = document.getElementById("pane-style-modal") as HTMLDialogElement;
+  const accent = document.getElementById("pane-accent") as HTMLInputElement;
+  const bg = document.getElementById("pane-bg") as HTMLInputElement;
+  const text = document.getElementById("pane-text") as HTMLInputElement;
+  const opacity = document.getElementById("pane-opacity") as HTMLInputElement;
+
+  document
+    .getElementById("pane-style-close")!
+    .addEventListener("click", () => dialog.close());
+
+  // 색을 고르는 즉시 창에 반영해 눈으로 보며 맞출 수 있게 한다
+  const live = () => {
+    if (!styleChannelId) return;
+    savePaneStyle(styleChannelId, {
+      accent: accent.value,
+      bg: bg.value,
+      text: text.value,
+      opacity: Number(opacity.value) / 100,
+    });
+  };
+  for (const el of [accent, bg, text]) {
+    el.addEventListener("input", live);
+  }
+  opacity.addEventListener("input", () => {
+    document.getElementById("pane-opacity-val")!.textContent =
+      `${opacity.value}%`;
+    live();
+  });
+
+  document
+    .getElementById("pane-style-presets")!
+    .addEventListener("click", (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>("[data-accent]");
+      if (!el || !styleChannelId) return;
+      accent.value = el.dataset.accent!;
+      bg.value = el.dataset.bg!;
+      live();
+      for (const s of document.querySelectorAll("#pane-style-presets .swatch")) {
+        s.classList.toggle("active", s === el);
+      }
+    });
+
+  document.getElementById("pane-style-reset")!.addEventListener("click", () => {
+    if (styleChannelId) savePaneStyle(styleChannelId, null);
+    dialog.close();
+  });
+}
+
+// ---------- 표시한 유저 관리 ----------
+
+type MarksTab = "note" | "highlight" | "block";
+let marksTab: MarksTab = "note";
+
+function renderMarksList(): void {
+  const listEl = document.getElementById("marks-list")!;
+  listEl.innerHTML = "";
+  for (const btn of document.querySelectorAll<HTMLButtonElement>(
+    "#marks-tabs button",
+  )) {
+    btn.classList.toggle("active", btn.dataset.tab === marksTab);
+  }
+
+  const rows: HTMLElement[] = [];
+  if (marksTab === "block") {
+    for (const b of allBlocks()) {
+      const el = document.createElement("div");
+      el.className = "mark-row";
+      const where = b.channelId
+        ? `${escapeHtml(channelName(b.channelId))} 채널`
+        : "모든 채널";
+      el.innerHTML =
+        `<span class="nick">${escapeHtml(b.nickname || knownNickname(b.userIdHash) || "(이름 모름)")}</span>` +
+        `<span class="mark-meta">${where}</span>` +
+        `<button class="mark-undo">차단 해제</button>`;
+      el.querySelector(".mark-undo")!.addEventListener("click", () => {
+        void unblock(b.userIdHash, b.channelId);
+      });
+      rows.push(el);
+    }
+  } else {
+    for (const { userIdHash, mark } of allMarks()) {
+      const value = marksTab === "note" ? mark.note : mark.highlight;
+      if (!value) continue;
+      const el = document.createElement("div");
+      el.className = "mark-row";
+      const detail =
+        marksTab === "note"
+          ? `<span class="mark-meta">${escapeHtml(mark.note)}</span>`
+          : `<span class="mark-meta"><span class="swatch small" style="background:${escapeHtml(mark.highlight)}"></span>${escapeHtml(mark.highlight)}</span>`;
+      el.innerHTML =
+        `<span class="nick">${escapeHtml(mark.nickname || knownNickname(userIdHash) || "(이름 모름)")}</span>` +
+        detail +
+        `<button class="mark-undo">지우기</button>`;
+      el.querySelector(".mark-undo")!.addEventListener("click", () => {
+        void setMark(
+          userIdHash,
+          mark.nickname,
+          marksTab === "note" ? { note: "" } : { highlight: "" },
+        );
+      });
+      rows.push(el);
+    }
+  }
+
+  if (rows.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent =
+      marksTab === "note"
+        ? "메모한 유저가 없습니다."
+        : marksTab === "highlight"
+          ? "강조 표시한 유저가 없습니다."
+          : "차단한 유저가 없습니다.";
+    rows.push(empty);
+  }
+  for (const el of rows) listEl.appendChild(el);
+}
+
+function initMarksModal(): void {
+  const dialog = document.getElementById("marks-modal") as HTMLDialogElement;
+  document
+    .getElementById("marks-close")!
+    .addEventListener("click", () => dialog.close());
+  for (const btn of document.querySelectorAll<HTMLButtonElement>(
+    "#marks-tabs button",
+  )) {
+    btn.addEventListener("click", () => {
+      marksTab = btn.dataset.tab as MarksTab;
+      renderMarksList();
+    });
+  }
+  document.getElementById("open-marks")!.addEventListener("click", () => {
+    (document.getElementById("settings-modal") as HTMLDialogElement).close();
+    renderMarksList();
+    dialog.showModal();
+  });
+  // 표시가 바뀌면 열려 있는 목록과 채팅 화면을 함께 갱신한다
+  onMarksChanged(() => {
+    if (dialog.open) renderMarksList();
+    refreshOpenPanes();
+  });
+}
+
+/** 차단·강조가 바뀌면 열려 있는 창의 대화를 다시 불러온다 */
+function refreshOpenPanes(): void {
+  for (const [id, pane] of panes) {
+    pane.chat.clear();
+    void getRecentMessages(id, 200).then((rows) => {
+      for (const row of rows) pane.chat.addStored(row);
+    });
+  }
+}
+
 // ---------- 부트스트랩 ----------
 
 /**
@@ -915,6 +1386,7 @@ async function main(): Promise<void> {
   await initDb(currentDbPath || undefined);
   await loadChannelNames();
   await loadLastActivity();
+  await loadMarks();
   await initNotifications().catch(() => {});
   await refreshLoginNickname();
   initSettingsModal();
@@ -923,6 +1395,12 @@ async function main(): Promise<void> {
   initChannelOrder();
   initSidebarToggle();
   initPaneDrop();
+  initPaneLayout();
+  initUserMenu();
+  initNoteDialog();
+  initHighlightDialog();
+  initPaneStyleDialog();
+  initMarksModal();
   initRenameDialog();
   document
     .getElementById("open-search")!
@@ -957,7 +1435,7 @@ async function main(): Promise<void> {
 
   // 등록된 모든 채널 수집 시작
   await collector.start();
-  for (const id of restore) await openChannel(id, false);
+  for (const id of restore) await openChannel(id, "add");
 }
 
 /** 로그인 닉네임 (상태 표시용) */
