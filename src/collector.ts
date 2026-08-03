@@ -2,8 +2,7 @@ import {
   getChatAccessToken,
   getLiveDetail,
   getLiveStatus,
-  getLogPowerState,
-  claimLogPower,
+  getLogPower,
   getUserStatus,
 } from "./chzzk/api";
 import { ChzzkChat, type ChatStatus } from "./chzzk/chat";
@@ -20,8 +19,8 @@ interface CollectorOptions {
   onStatus(channelId: string, status: ChannelStatus, detail?: string): void;
   /** 방송 정보 갱신. justStarted면 방금 방송이 시작된 것 */
   onLive(channelId: string, live: LiveInfo | null, justStarted: boolean): void;
-  /** 이 채널에서 내가 모은 통나무 파워. claimed는 방금 수령한 보상 수 */
-  onLogPower(channelId: string, value: number, claimed: number): void;
+  /** 이 채널에서 내가 모은 통나무 파워 */
+  onLogPower(channelId: string, value: number): void;
 }
 
 const POLL_MS = 30_000;
@@ -42,8 +41,6 @@ export class ChatCollector {
   private busy = new Set<string>();
   private logPowers = new Map<string, number>();
   private logPowerAt = new Map<string, number>();
-  /** 이미 수령을 시도한 보상 ID — 같은 것을 두 번 부르지 않는다 */
-  private claimedIds = new Set<string>();
   private uid: string | null = null;
   private nickname = "";
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -76,8 +73,8 @@ export class ChatCollector {
     return this.logPowers.get(channelId) ?? null;
   }
 
-  /** 지금 바로 확인하고, 받을 수 있는 보상이 있으면 받는다 */
-  async claimLogPowerNow(channelId: string): Promise<void> {
+  /** 통나무 파워를 지금 바로 다시 읽어 온다 */
+  async refreshLogPower(channelId: string): Promise<void> {
     await this.pollLogPower(channelId, true);
   }
 
@@ -196,11 +193,8 @@ export class ChatCollector {
   }
 
   /**
-   * 통나무 파워를 확인하고, 받아 둔 보상이 있으면 수령한다.
-   *
-   * 적립 자체는 치지직이 한다 (시청·팔로우·후원 등). 여기서 하는 일은
-   * 웹에서 버튼을 눌러 받는 것과 같은 수령 요청뿐이고, 이미 받은 것은
-   * 다시 부르지 않는다.
+   * 통나무 파워를 읽어 온다.
+   * 적립도 수령도 치지직에서 이뤄지고, 앱은 얼마나 모였는지만 확인한다.
    */
   private async pollLogPower(channelId: string, force: boolean): Promise<void> {
     if (!hasAuth()) return;
@@ -208,26 +202,10 @@ export class ChatCollector {
     if (!force && Date.now() - last < LOG_POWER_MS) return;
     this.logPowerAt.set(channelId, Date.now());
 
-    const state = await getLogPowerState(channelId).catch(() => null);
-    if (!state) return;
-
-    // 받을 수 있는 보상은 언제나 바로 받는다
-    let claimed = 0;
-    for (const id of state.claims) {
-      if (this.claimedIds.has(id)) continue;
-      this.claimedIds.add(id);
-      if (await claimLogPower(channelId, id)) claimed += 1;
-    }
-
-    // 수령했다면 늘어난 값을 다시 읽어 온다
-    const value =
-      claimed > 0
-        ? ((await getLogPowerState(channelId).catch(() => null))?.power ??
-          state.power)
-        : state.power;
+    const value = await getLogPower(channelId).catch(() => null);
     if (value === null) return;
     this.logPowers.set(channelId, value);
-    this.opts.onLogPower(channelId, value, claimed);
+    this.opts.onLogPower(channelId, value);
   }
 
   private async connect(channelId: string, chatChannelId: string): Promise<void> {

@@ -73,7 +73,6 @@
               <span class="pane-name"></span>
               <span class="pane-viewers"></span>
               <span class="pane-uptime"></span>
-              <button class="pane-power" title="이 채널에서 모은 통나무 파워 (눌러서 지금 확인·수령)"></button>
             </div>
             <div class="pane-row2">
               <span class="pane-title"></span>
@@ -96,8 +95,12 @@
         <div class="pane-status"></div>
 
         <div class="pane-input">
+          <button class="pane-power" title="이 채널에서 모은 통나무 파워 (눌러서 새로 확인)">
+            <span class="pane-power-icon"></span>
+            <span class="pane-power-value">–</span>
+          </button>
           <input class="pane-text-input" disabled autocomplete="off" spellcheck="false" />
-          <button class="pane-send" disabled>전송</button>
+          <button class="pane-send" disabled>채팅</button>
         </div>
       </section>
     </template>
