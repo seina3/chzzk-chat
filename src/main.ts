@@ -18,11 +18,13 @@ import { ChatCollector } from "./collector";
 import {
   getChannelLastActivity,
   getLatestLogPower,
+  getLogPowerHistory,
   getRecentMessages,
   initDb,
   markMessageBlinded,
   recordLogPower,
   saveMessage,
+  type LogPowerPoint,
 } from "./db";
 import { channelName, loadChannelNames, noteChannelName } from "./channel-names";
 import { logMessage, noteLive, resetSessions } from "./logger";
@@ -56,7 +58,7 @@ import {
 import { DonationsModal } from "./ui/donations";
 import { GlobalSearchModal } from "./ui/global-search";
 import { ChannelPane } from "./ui/pane";
-import { escapeHtml } from "./ui/render";
+import { escapeHtml, formatDateTime, formatNumber } from "./ui/render";
 import { UserHistoryModal } from "./ui/user-history";
 
 let notifyGranted = false;
@@ -592,6 +594,7 @@ const paneCallbacks = {
   onOpenLive: (id: string) => openChannelPage(id),
   onDock: (id: string) => void dockPane(id),
   onRefreshLogPower: (id: string) => void refreshLogPower(id),
+  onLogPowerHistory: (id: string) => void openLogPowerHistory(id),
   onPickBadge: (id: string) => void openBadgePicker(id),
 };
 
@@ -604,6 +607,71 @@ async function refreshLogPower(channelId: string): Promise<void> {
   await collector.refreshLogPower(channelId).catch((e) => notify(`확인 실패: ${e}`));
   const value = collector.getLogPower(channelId);
   panes.get(channelId)?.setLogPower(value, null);
+}
+
+/**
+ * 이 채널에서 통나무 파워가 어떻게 늘어 왔는지 보여준다.
+ * 값이 달라질 때마다 한 줄씩 남겨 둔 것을 최근 것부터 읽는다.
+ */
+async function openLogPowerHistory(channelId: string): Promise<void> {
+  const dialog = document.getElementById("power-modal") as HTMLDialogElement;
+  const listEl = document.getElementById("power-log")!;
+  document.getElementById("power-title")!.textContent =
+    `${channelName(channelId)} — 통나무 파워 기록`;
+  listEl.innerHTML = `<div class="history-empty">불러오는 중…</div>`;
+  dialog.showModal();
+
+  const points = await getLogPowerHistory(channelId).catch(() => []);
+  if (!dialog.open) return;
+  renderLogPowerHistory(points);
+}
+
+function renderLogPowerHistory(points: LogPowerPoint[]): void {
+  const listEl = document.getElementById("power-log")!;
+  if (points.length === 0) {
+    listEl.innerHTML = `<div class="history-empty">아직 남은 기록이 없습니다.</div>`;
+    return;
+  }
+
+  // 첫 줄은 그때까지 모아 둔 값이라 늘어난 몫을 알 수 없다
+  const deltas = points.map((p, i) => (i === 0 ? null : p.value - points[i - 1].value));
+  const gained = deltas.reduce<number>((sum, d) => (d && d > 0 ? sum + d : sum), 0);
+  const latest = points[points.length - 1];
+
+  const rows = points
+    .map((p, i) => {
+      const d = deltas[i];
+      const delta =
+        d === null
+          ? `<span class="power-row-delta">처음 확인</span>`
+          : d > 0
+            ? `<span class="power-row-delta up">+${formatNumber(d)}</span>`
+            : `<span class="power-row-delta down">${formatNumber(d)}</span>`;
+      return (
+        `<div class="power-row">` +
+        `<span class="power-row-time">${formatDateTime(p.checked_at)}</span>` +
+        delta +
+        `<span class="power-row-value">${formatNumber(p.value)}</span>` +
+        `</div>`
+      );
+    })
+    .reverse()
+    .join("");
+
+  listEl.innerHTML =
+    `<div class="power-sum">` +
+    `지금 <strong>${formatNumber(latest.value)}</strong>` +
+    ` · 기록이 시작된 뒤 <strong>+${formatNumber(gained)}</strong>` +
+    ` · ${points.length}번 변했습니다` +
+    `</div>` +
+    rows;
+}
+
+function initPowerModal(): void {
+  const dialog = document.getElementById("power-modal") as HTMLDialogElement;
+  document
+    .getElementById("power-close")!
+    .addEventListener("click", () => dialog.close());
 }
 
 function dockedPaneCount(): number {
@@ -1736,6 +1804,7 @@ async function main(): Promise<void> {
   initPaneReorder();
   initPaneLayout();
   initBadgeModal();
+  initPowerModal();
   initUserMenu();
   initNoteDialog();
   initHighlightDialog();

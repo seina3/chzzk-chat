@@ -108,8 +108,13 @@ export async function getLogPowerState(
   return { power: pickPower(c), claims: findClaimIds(c) };
 }
 
+/**
+ * 수령 ID.
+ * 종류에 따라 "FOLLOW-<UUID>"처럼 접두사가 붙기도 하고
+ * (1시간 시청 보상처럼) 그냥 UUID만 오기도 한다 — 둘 다 받는다.
+ */
 const CLAIM_ID =
-  /^[A-Z][A-Z0-9_]*-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  /^(?:[A-Z][A-Z0-9_]*-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** 응답 어디에 있든 수령 ID 꼴의 문자열을 모두 찾아낸다 */
 function findClaimIds(value: unknown, out = new Set<string>()): string[] {

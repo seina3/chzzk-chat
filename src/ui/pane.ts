@@ -29,6 +29,8 @@ export interface PaneCallbacks {
   onDock(channelId: string): void;
   /** 통나무 파워를 지금 다시 확인 */
   onRefreshLogPower(channelId: string): void;
+  /** 모아 둔 통나무 파워 기록 보기 */
+  onLogPowerHistory(channelId: string): void;
   /** 뱃지 고르기 창 열기 */
   onPickBadge(channelId: string): void;
 }
@@ -51,6 +53,7 @@ export class ChannelPane {
   private dockBtn: HTMLButtonElement;
   private powerBtn: HTMLButtonElement;
   private powerValueEl: HTMLElement;
+  private powerLogBtn: HTMLButtonElement;
   private streamerOnly = false;
 
   constructor(
@@ -109,6 +112,12 @@ export class ChannelPane {
     this.powerBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       cb.onRefreshLogPower(channelId);
+    });
+    // 남은 기록이 생기기 전에는 눌러 봐야 빈 창이라 숨겨 둔다
+    this.powerLogBtn = pick<HTMLButtonElement>("pane-power-log");
+    this.powerLogBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      cb.onLogPowerHistory(channelId);
     });
     pick<HTMLButtonElement>("pane-badge").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -219,6 +228,8 @@ export class ChannelPane {
       void this.powerBtn.offsetWidth;
       this.powerBtn.classList.add("bumped");
     }
+    // 값을 한 번이라도 읽었으면 그 시점이 기록으로 남아 있다
+    this.powerLogBtn.classList.toggle("hidden", value === null);
   }
 
   /** 최신 채팅으로 내린다 (분할 방식이 바뀌거나 창이 새로 붙었을 때) */
