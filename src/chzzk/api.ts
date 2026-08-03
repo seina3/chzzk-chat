@@ -243,19 +243,25 @@ function findByKey(value: unknown, re: RegExp): string | null {
   return null;
 }
 
+/**
+ * 응답에서 활동 뱃지를 모은다.
+ * 구독 뱃지는 고르고 말고 할 것이 아니라 조건이 되면 그냥 붙는 것이라,
+ * subscription 아래에 있는 것은 빼고 센다.
+ */
 function collectBadges(
   value: unknown,
   key: string,
   out: Map<string, ChzzkBadge>,
+  inSubscription = false,
 ): void {
   if (Array.isArray(value)) {
-    for (const v of value) collectBadges(v, key, out);
+    for (const v of value) collectBadges(v, key, out, inSubscription);
     return;
   }
   if (!value || typeof value !== "object") return;
   const o = value as Record<string, unknown>;
 
-  if (typeof o.badgeId === "string" && o.badgeId) {
+  if (!inSubscription && typeof o.badgeId === "string" && o.badgeId) {
     const prev = out.get(o.badgeId);
     // 담겨 있던 자리 이름이나 객체 안의 참/거짓으로 장착 여부를 본다.
     // "activityBadges"(가진 뱃지 전부)에 걸리지 않도록 activ가 아니라
@@ -273,7 +279,9 @@ function collectBadges(
       activated: activated || prev?.activated || false,
     });
   }
-  for (const [k, v] of Object.entries(o)) collectBadges(v, k, out);
+  for (const [k, v] of Object.entries(o)) {
+    collectBadges(v, k, out, inSubscription || /subscri/i.test(k));
+  }
 }
 
 /**

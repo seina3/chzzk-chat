@@ -2394,6 +2394,11 @@ textarea:focus {
   box-shadow: var(--ring);
 }
 
+/* 한도를 다 채웠을 때 남은 뱃지들 */
+.badge-choice.locked {
+  opacity: 0.4;
+}
+
 .badge-choice img,
 .badge-noimg {
   width: 34px;

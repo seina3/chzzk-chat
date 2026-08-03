@@ -257,8 +257,12 @@ function initChannelOrder(): void {
     e.dataTransfer?.setData("text/plain", dragChannelId);
   });
 
+  // 목록이 길면 끌면서 위아래로 흘러야 끝까지 옮길 수 있다
+  const listScroller = edgeScroller(listEl, "y", 52, 12);
+
   listEl.addEventListener("dragend", () => {
     dragChannelId = null;
+    listScroller.stop();
     for (const el of listEl.querySelectorAll(".drop-target, .dragging")) {
       el.classList.remove("drop-target", "dragging");
     }
@@ -267,6 +271,7 @@ function initChannelOrder(): void {
   listEl.addEventListener("dragover", (e) => {
     if (!dragChannelId) return;
     e.preventDefault();
+    listScroller.update(e);
     const li = (e.target as HTMLElement).closest<HTMLElement>(".channel");
     for (const el of listEl.querySelectorAll(".drop-target")) {
       el.classList.remove("drop-target");
@@ -280,6 +285,7 @@ function initChannelOrder(): void {
     const target = li?.dataset.channelId;
     const moved = dragChannelId;
     dragChannelId = null;
+    listScroller.stop();
     if (!moved || !target || moved === target) {
       renderChannelList();
       return;
@@ -833,6 +839,7 @@ function initPaneReorder(): void {
 
   panesEl.addEventListener("dragend", () => {
     dragging = null;
+    paneScroller.stop();
     for (const el of panesEl.querySelectorAll(".dragging, .drop-target")) {
       el.classList.remove("dragging", "drop-target");
     }
@@ -841,7 +848,7 @@ function initPaneReorder(): void {
   panesEl.addEventListener("dragover", (e) => {
     if (!dragging) return;
     e.preventDefault();
-    autoScrollPanes(e);
+    paneScroller.update(e);
     const over = (e.target as HTMLElement).closest<HTMLElement>(".pane");
     for (const el of panesEl.querySelectorAll(".drop-target")) {
       el.classList.remove("drop-target");
@@ -858,6 +865,7 @@ function initPaneReorder(): void {
     const over = (e.target as HTMLElement).closest<HTMLElement>(".pane");
     const moved = dragging;
     dragging = null;
+    paneScroller.stop();
     for (const el of panesEl.querySelectorAll(".drop-target")) {
       el.classList.remove("drop-target");
     }
@@ -874,26 +882,67 @@ function initPaneReorder(): void {
   });
 }
 
-/**
- * 끌고 있는 동안 창 영역 가장자리에 가까워지면 저절로 밀어 준다.
- * 화면 밖으로 스크롤된 창까지 옮길 수 있어야 하므로 양쪽·위아래 모두 본다.
- */
-function autoScrollPanes(e: DragEvent): void {
-  const box = panesEl.getBoundingClientRect();
-  const edge = 90;
-  const step = 24;
-  if (e.clientX < box.left + edge) panesEl.scrollLeft -= step;
-  else if (e.clientX > box.right - edge) panesEl.scrollLeft += step;
-  if (e.clientY < box.top + edge) panesEl.scrollTop -= step;
-  else if (e.clientY > box.bottom - edge) panesEl.scrollTop += step;
+interface EdgeScroller {
+  /** dragover마다 불러 준다 */
+  update(e: DragEvent): void;
+  /** 끌기가 끝나면 멈춘다 */
+  stop(): void;
 }
+
+/**
+ * 끌고 있는 동안 가장자리에 가까워지면 목록이 저절로 흐르게 한다.
+ * 화면 밖으로 밀려난 것까지 옮길 수 있어야 하기 때문이다.
+ *
+ * dragover는 손을 멈추면 뜸하게 오므로, 가장자리에 들어온 뒤로는
+ * 타이머가 이어서 굴린다 — 가장자리에 대고 있기만 해도 계속 흐른다.
+ */
+function edgeScroller(
+  el: HTMLElement,
+  axis: "x" | "y" | "both",
+  edge: number,
+  step: number,
+): EdgeScroller {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let dx = 0;
+  let dy = 0;
+
+  const roll = () => {
+    el.scrollLeft += dx;
+    el.scrollTop += dy;
+  };
+  const stop = () => {
+    if (timer !== null) clearInterval(timer);
+    timer = null;
+  };
+
+  return {
+    update(e) {
+      const box = el.getBoundingClientRect();
+      const nearX =
+        e.clientX < box.left + edge ? -step : e.clientX > box.right - edge ? step : 0;
+      const nearY =
+        e.clientY < box.top + edge ? -step : e.clientY > box.bottom - edge ? step : 0;
+      dx = axis === "y" ? 0 : nearX;
+      dy = axis === "x" ? 0 : nearY;
+      if (dx === 0 && dy === 0) {
+        stop();
+        return;
+      }
+      roll();
+      if (timer === null) timer = setInterval(roll, 40);
+    },
+    stop,
+  };
+}
+
+const paneScroller = edgeScroller(panesEl, "both", 90, 18);
 
 /** 사이드바에서 창 영역으로 채널을 끌어다 놓으면 나란히 연다 */
 function initPaneDrop(): void {
   panesEl.addEventListener("dragover", (e) => {
     if (!dragChannelId) return;
     e.preventDefault();
-    autoScrollPanes(e);
+    paneScroller.update(e);
     panesEl.classList.add("drop-here");
   });
   panesEl.addEventListener("dragleave", (e) => {
@@ -1139,6 +1188,9 @@ function applyAuthChange(message: string): void {
 
 // ---------- 내 프로필 · 뱃지 고르기 ----------
 
+/** 구독 뱃지를 뺀 활동 뱃지는 2개까지 달 수 있다 */
+const BADGE_LIMIT = 2;
+
 let badgeChannelId: string | null = null;
 let badgeChatId: string | null = null;
 /** 이 채널에서 쓰는 내 닉네임 (미리보기에 쓴다) */
@@ -1211,7 +1263,7 @@ async function openBadgePicker(channelId: string): Promise<void> {
   if (badgeOn.size === 0) {
     const owned = new Set(badgeList.map((b) => b.badgeId));
     for (const id of rememberedBadges(channelId)) {
-      if (owned.has(id)) badgeOn.add(id);
+      if (owned.has(id) && badgeOn.size < BADGE_LIMIT) badgeOn.add(id);
     }
   }
   renderBadges();
@@ -1281,11 +1333,14 @@ function renderBadges(): void {
     renderBadgePreview();
     return;
   }
+  // 더 달 수 없을 때는 남은 것들을 흐리게 해 한도를 눈에 보이게 한다
+  const full = badgeOn.size >= BADGE_LIMIT;
   listEl.innerHTML = badgeList
     .map((b) => {
       const on = badgeOn.has(b.badgeId);
       return (
-        `<button class="badge-choice${on ? " active" : ""}" data-badge="${escapeHtml(b.badgeId)}"` +
+        `<button class="badge-choice${on ? " active" : ""}${!on && full ? " locked" : ""}"` +
+        ` data-badge="${escapeHtml(b.badgeId)}"` +
         ` title="${escapeHtml(b.badgeId)}" aria-pressed="${on}">` +
         badgeFaceHtml(b) +
         `<span class="badge-choice-name">${escapeHtml(b.title)}</span>` +
@@ -1367,7 +1422,11 @@ function initBadgeModal(): void {
       ?.dataset.badge;
     if (!id || !badgeChatId) return;
     if (badgeOn.has(id)) badgeOn.delete(id);
-    else badgeOn.add(id);
+    else if (badgeOn.size >= BADGE_LIMIT) {
+      document.getElementById("badge-state")!.textContent =
+        `뱃지는 ${BADGE_LIMIT}개까지 달 수 있습니다 · 하나를 끄고 다시 눌러 주세요`;
+      return;
+    } else badgeOn.add(id);
     renderBadges();
     void saveBadges();
   });
