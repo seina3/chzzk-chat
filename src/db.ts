@@ -20,6 +20,13 @@ export interface StoredMessage {
   amount_hidden: number | null;
   /** 치지직 권한 코드 (streamer / …manager / common_user) */
   role_code: string | null;
+  /** 구독 뱃지 이미지와 개월 수 — 다시 불러와도 뱃지가 남도록 */
+  sub_badge: string | null;
+  sub_month: number | null;
+  /** 제재 안내일 때 어떤 처분인지 (삭제 / 임시 제한 / 영구 제한) */
+  mod_action: string | null;
+  /** 제재 안내의 대상 닉네임 */
+  target_nick: string | null;
 }
 
 /** 한 유저가 썼던 닉네임과 사용 기간 */
@@ -121,6 +128,17 @@ export async function initDb(dbPath?: string): Promise<void> {
   await db
     .execute(`ALTER TABLE messages ADD COLUMN role_code TEXT`)
     .catch(() => undefined);
+  // 구독 뱃지도 남겨 두어야 다시 불러왔을 때 사라지지 않는다
+  for (const col of [
+    "sub_badge TEXT",
+    "sub_month INTEGER",
+    "mod_action TEXT",
+    "target_nick TEXT",
+  ]) {
+    await db
+      .execute(`ALTER TABLE messages ADD COLUMN ${col}`)
+      .catch(() => undefined);
+  }
 
   // 중복 판정 기준에서 content를 뺀다.
   // 같은 메시지가 나중에 가려진 내용으로 다시 내려와도 별도 행으로 쌓이지 않고,
@@ -166,8 +184,9 @@ export function saveMessage(m: ChatMessage): void {
       const db = requireDb();
       await db.execute(
         `INSERT OR IGNORE INTO messages
-         (channel_id, user_id_hash, nickname, content, emojis, msg_type, pay_amount, msg_time, blind, amount_hidden, role_code)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+         (channel_id, user_id_hash, nickname, content, emojis, msg_type, pay_amount, msg_time,
+          blind, amount_hidden, role_code, sub_badge, sub_month, mod_action, target_nick)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [
           m.channelId,
           m.userIdHash,
@@ -180,6 +199,10 @@ export function saveMessage(m: ChatMessage): void {
           m.blind ?? null,
           m.amountHidden ? 1 : null,
           m.roleCode || null,
+          m.subscriptionBadgeUrl,
+          m.subscriptionMonth,
+          m.modAction ?? null,
+          m.targetNickname ?? null,
         ],
       );
       // 이미 저장된 메시지가 가려진 상태로 다시 온 경우: 내용은 그대로 두고
@@ -703,17 +726,28 @@ export async function getLogPowerHistory(
 // ---------- 제재 기록 (통나무 채팅 로그) ----------
 
 /**
- * 한 유저가 제재당한 기록 — 클린봇·운영자에게 가려진 메시지와
- * 채팅 제한 같은 안내를 모은다. 가려지기 전의 원문이 그대로 남아 있어
- * 어떤 발언 때문이었는지 볼 수 있다.
+ * 한 유저가 받은 제재 기록.
+ *
+ * 두 가지를 모은다:
+ *  - 그 유저가 쓴 메시지 중 운영자에게 가려진 것 (원문이 남아 있어 사유를 안다)
+ *  - "OOO님을 임시 제한 처리했습니다" 같은 안내 중 대상이 그 유저인 것
+ *
+ * 클린봇 자동 가림은 운영자 제재가 아니므로 넣지 않는다. 익명(anonymous)은
+ * 여러 사람이 섞여 있어 제재 기록을 물을 수 없으므로 아무것도 돌려주지 않는다.
  */
 export async function getUserModLog(
   userIdHash: string,
+  nickname: string,
   channelId?: string,
   limit = 100,
 ): Promise<StoredMessage[]> {
+  if (userIdHash === "anonymous") return [];
   const params: unknown[] = [userIdHash];
-  let where = "user_id_hash = $1 AND (blind IS NOT NULL OR msg_type = 'system')";
+  let where = "(user_id_hash = $1 AND blind IN ('moderator', 'hidden'))";
+  if (nickname) {
+    params.push(nickname);
+    where = `(${where} OR target_nick = $${params.length})`;
+  }
   if (channelId) {
     params.push(channelId);
     where += ` AND channel_id = $${params.length}`;
@@ -877,7 +911,7 @@ export async function getUserStats(
               AS donation_total,
             SUM(CASE WHEN msg_type = 'donation' THEN 1 ELSE 0 END) AS donation_count,
             SUM(CASE WHEN amount_hidden = 1 THEN 1 ELSE 0 END) AS donation_hidden,
-            SUM(CASE WHEN blind IS NOT NULL THEN 1 ELSE 0 END) AS blinded
+            SUM(CASE WHEN blind IN ('moderator', 'hidden') THEN 1 ELSE 0 END) AS blinded
      FROM messages WHERE ${where}`,
     params,
   );

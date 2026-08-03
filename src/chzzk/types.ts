@@ -41,6 +41,10 @@ export interface ChatMessage {
   blind?: BlindType | null;
   /** 접속 시 최근 채팅 재생분 (실시간 수신이 아님) */
   isHistory?: boolean;
+  /** 제재 안내일 때 어떤 처분인지 (삭제 / 임시 제한 / 영구 제한) */
+  modAction?: string | null;
+  /** 제재 안내의 대상 닉네임 */
+  targetNickname?: string | null;
 }
 
 export interface UserStatus {

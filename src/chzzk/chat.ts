@@ -48,6 +48,41 @@ interface ChzzkChatOptions {
   onDebug?: (direction: "→" | "←", frame: string) => void;
 }
 
+/** 제재 처분의 종류 */
+const MOD_ACTIONS: [RegExp, string][] = [
+  [/영구\s*제한|영구\s*정지|이용\s*정지/, "영구 제한"],
+  [/임시\s*제한|일시\s*정지/, "임시 제한"],
+  [/삭제/, "메시지 삭제"],
+  [/활동\s*제한|채팅\s*제한/, "채팅 제한"],
+];
+
+/**
+ * "OOO님이 XXX님을 임시 제한 처리했습니다" 꼴의 안내에서
+ * 처분 종류와 대상 닉네임을 뽑는다. 제재 안내가 아니면 둘 다 null.
+ */
+function parseModNotice(
+  text: string,
+  extras: any,
+  blind: string | null,
+): { modAction: string | null; targetNickname: string | null } {
+  // 운영자가 가린 내 메시지도 하나의 처분으로 본다
+  if (!text) {
+    return {
+      modAction: blind === "moderator" ? "메시지 삭제" : null,
+      targetNickname: null,
+    };
+  }
+
+  const action = MOD_ACTIONS.find(([re]) => re.test(text))?.[1] ?? null;
+  if (!action) return { modAction: null, targetNickname: null };
+
+  // 대상은 extras에 들어 있으면 그것을 쓰고, 없으면 문구에서 읽는다
+  const fromExtras =
+    extras?.targetChatProfile?.nickname ?? extras?.targetNickname ?? null;
+  const fromText = text.match(/(?:님이\s*)?(.+?)\s*님을/)?.[1]?.trim() ?? null;
+  return { modAction: action, targetNickname: fromExtras || fromText };
+}
+
 export class ChzzkChat {
   private ws: Awaited<ReturnType<typeof WebSocket.connect>> | null = null;
   private sid = "";
@@ -394,6 +429,14 @@ export class ChzzkChat {
     const time: number = raw.msgTime ?? raw.messageTime ?? Date.now();
     const sub = profile?.streamingProperty?.subscription;
 
+    // 운영자 제재 안내라면 처분 종류와 대상을 뽑아 둔다.
+    // ("모로이 모나님이 왜클릭님을 임시 제한 처리했습니다" 같은 문구)
+    const { modAction, targetNickname } = parseModNotice(
+      isSystem ? content : "",
+      extras,
+      blind,
+    );
+
     let type: ChatMessage["type"] = "chat";
     if (isDonation) type = "donation";
     else if (isSubscription) type = "subscription";
@@ -417,6 +460,8 @@ export class ChzzkChat {
       time,
       type,
       blind,
+      modAction,
+      targetNickname,
     };
   }
 

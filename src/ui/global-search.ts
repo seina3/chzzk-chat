@@ -223,7 +223,7 @@ export class GlobalSearchModal {
       cheese +
       roleBadgeHtml(row.role_code) +
       noteTagHtml(noteOf(row.user_id_hash)) +
-      `<span class="nick" data-uid="${escapeHtml(row.user_id_hash)}" data-nick="${escapeHtml(row.nickname)}" style="color:${nickColorFor(row.user_id_hash, row.role_code)}">${escapeHtml(row.nickname)}</span> ` +
+      `<span class="nick${noteOf(row.user_id_hash) ? " noted" : ""}" data-uid="${escapeHtml(row.user_id_hash)}" data-nick="${escapeHtml(row.nickname)}" style="color:${nickColorFor(row.user_id_hash, row.role_code)}">${escapeHtml(row.nickname)}</span> ` +
       `<span class="content">${renderContent(row.content, emojis)}</span>`;
     return el;
   }

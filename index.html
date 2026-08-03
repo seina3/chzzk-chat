@@ -166,10 +166,17 @@
         <label>글자색 <input type="color" id="pane-text" value="#edeef1" /></label>
       </div>
       <label class="range-row">
-        <span>불투명도</span>
-        <input type="range" id="pane-opacity" min="30" max="100" step="1" value="100" />
+        <span>색 진하기</span>
+        <input type="range" id="pane-opacity" min="10" max="100" step="1" value="100" />
         <span id="pane-opacity-val">100%</span>
       </label>
+      <p class="settings-help">진하기는 창을 투명하게 만드는 것이 아니라, 고른 색을 얼마나 진하게 얹을지를 정합니다.</p>
+      <label class="dir-label">저장해 둔 조합</label>
+      <div id="pane-style-saved" class="swatches"></div>
+      <div class="log-dir-row">
+        <input id="preset-name" placeholder="조합 이름 (예: 아리사 보라)" spellcheck="false" autocomplete="off" />
+        <button id="preset-save">지금 색 저장</button>
+      </div>
       <div class="login-row">
         <button id="pane-style-reset">기본값으로</button>
       </div>
@@ -265,10 +272,6 @@
         읽기만 할 경우 로그인 없이 사용할 수 있습니다.
       </p>
       <div id="login-status" class="settings-help"></div>
-      <label class="checkbox-row">
-        <input type="checkbox" id="set-auto-claim" />
-        <span>받을 수 있는 통나무 파워를 자동으로 수령 (🪵)</span>
-      </label>
       <label class="checkbox-row">
         <input type="checkbox" id="set-notify-live" />
         <span>방송 시작 시 알림 표시</span>

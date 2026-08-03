@@ -8,6 +8,7 @@ import {
   type UserStats,
 } from "../db";
 import { channelName } from "../channel-names";
+import { noteOf } from "../marks";
 import {
   blindRowClass,
   blindTagHtml,
@@ -167,6 +168,10 @@ export class UserHistoryModal {
             .join("") +
           `</details>`
         : "";
+    const note = noteOf(this.userIdHash);
+    const noteBox = note
+      ? `<div class="user-note">📝 ${escapeHtml(note)}</div>`
+      : "";
     const scope = this.channelId
       ? `<br><span class="uid">${escapeHtml(channelName(this.channelId))} 채널에서의 기록만 보고 있습니다.</span>`
       : "";
@@ -183,14 +188,16 @@ export class UserHistoryModal {
 
     if (this.mode === "mod") {
       this.statsEl.innerHTML =
-        `가려진 메시지 ${formatNumber(s.blindedCount)}개 · 전체 채팅 ${formatNumber(s.count)}회${uid}` +
-        `<div class="settings-help">클린봇·운영자에게 가려지기 전의 원문을 그대로 보여줍니다.</div>`;
+        noteBox +
+        `운영자에게 가려진 메시지 ${formatNumber(s.blindedCount)}개 · 전체 채팅 ${formatNumber(s.count)}회${uid}` +
+        `<div class="settings-help">가려지기 전의 원문을 그대로 보여줍니다. 클린봇 자동 가림은 제외했습니다.</div>`;
       return;
     }
 
     if (this.donationsOnly) {
       const total = `<span class="cheese">🧀 ${formatNumber(s.donationTotal)}</span>`;
       this.statsEl.innerHTML =
+        noteBox +
         `후원 ${total} · ${formatNumber(s.donationCount)}회${hidden}${uid}` +
         this.breakdownHtml() +
         aka;
@@ -212,6 +219,7 @@ export class UserHistoryModal {
         ? ` · <span class="blinded-count">가려짐 ${formatNumber(s.blindedCount)}개</span>`
         : "";
     this.statsEl.innerHTML =
+      noteBox +
       `총 채팅 ${formatNumber(s.count)}회${donation}${blinded}${range}${uid}` +
       this.breakdownHtml() +
       aka;
@@ -266,7 +274,7 @@ export class UserHistoryModal {
   private async loadPage(): Promise<void> {
     const rows =
       this.mode === "mod"
-        ? await getUserModLog(this.userIdHash, this.channelId)
+        ? await getUserModLog(this.userIdHash, this.nickname, this.channelId)
         : await getUserMessages(this.userIdHash, {
             before: this.oldestLoaded,
             search: this.search || undefined,
@@ -318,6 +326,9 @@ export class UserHistoryModal {
       /* 구버전 데이터 무시 */
     }
     const channelTag = `<span class="channel-tag">${escapeHtml(channelName(row.channel_id))}</span>`;
+    const action = row.mod_action
+      ? `<span class="mod-action">${escapeHtml(row.mod_action)}</span>`
+      : "";
     const cheese =
       row.msg_type !== "donation"
         ? ""
@@ -327,6 +338,7 @@ export class UserHistoryModal {
     el.innerHTML =
       `<span class="time">${formatDateTime(row.msg_time)}</span>` +
       channelTag +
+      action +
       blindTagHtml(row.blind) +
       cheese +
       roleBadgeHtml(row.role_code) +

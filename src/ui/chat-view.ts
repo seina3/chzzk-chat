@@ -81,6 +81,13 @@ export class ChatView {
     this.scrollBtn.classList.add("hidden");
   }
 
+  /** 맨 아래(최신)로 내린다 */
+  scrollToLatest(): void {
+    this.autoScroll = true;
+    this.scrollBtn.classList.add("hidden");
+    this.scrollToBottom();
+  }
+
   /** 스트리머가 친 채팅만 남겨 보기 (그리는 내용은 그대로, 화면에서만 거른다) */
   setStreamerOnly(on: boolean): void {
     this.container.classList.toggle("only-streamer", on);
@@ -110,8 +117,8 @@ export class ChatView {
       content: row.content,
       emojis,
       roleCode: row.role_code ?? "common_user",
-      subscriptionBadgeUrl: null,
-      subscriptionMonth: null,
+      subscriptionBadgeUrl: row.sub_badge,
+      subscriptionMonth: row.sub_month,
       payAmount: row.pay_amount,
       amountHidden: row.amount_hidden === 1,
       blind: (row.blind as ChatMessage["blind"]) ?? null,
@@ -166,6 +173,7 @@ export class ChatView {
       row.classList.add("marked");
       row.style.setProperty("--mark", mark);
     }
+    const note = noteOf(m.userIdHash);
     const blindTag = blindTagHtml(m.blind);
 
     // 채널이 금액 숨기기를 켜 두면 액수 없이 후원만 알 수 있다
@@ -182,8 +190,10 @@ export class ChatView {
       donationTag +
       roleBadgeHtml(m.roleCode) +
       subBadgeHtml(m.subscriptionBadgeUrl, m.subscriptionMonth) +
-      noteTagHtml(noteOf(m.userIdHash)) +
-      `<span class="nick" data-uid="${escapeHtml(m.userIdHash)}" style="color:${nickColorFor(m.userIdHash, m.roleCode)}">${escapeHtml(m.nickname)}</span>` +
+      noteTagHtml(note) +
+      `<span class="nick${note ? " noted" : ""}" data-uid="${escapeHtml(m.userIdHash)}"` +
+      `${note ? ` title="📝 ${escapeHtml(note)}"` : ""}` +
+      ` style="color:${nickColorFor(m.userIdHash, m.roleCode)}">${escapeHtml(m.nickname)}</span>` +
       `<span class="content">${renderContent(m.content, m.emojis)}</span>`;
 
     this.append(row);

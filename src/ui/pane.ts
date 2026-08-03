@@ -126,6 +126,8 @@ export class ChannelPane {
     });
 
     if (floating) this.makeDraggable(pick("pane-head"));
+    // 붙어 있는 창은 머리글을 끌어 순서를 바꾼다
+    else pick("pane-head").draggable = true;
   }
 
   /** 팝업 창은 머리글을 잡아 옮길 수 있다 */
@@ -168,17 +170,27 @@ export class ChannelPane {
     this.el.style.height = "520px";
   }
 
-  /** 창마다 다른 색·투명도를 입힌다 */
+  /**
+   * 창마다 다른 색을 입힌다.
+   * 진하기(opacity)는 창 자체를 투명하게 만드는 것이 아니라, 얹는 색을
+   * 얼마나 진하게 섞을지를 정한다 — 글자는 항상 또렷하게 남는다.
+   */
   applyStyle(style: PaneStyle | undefined): void {
     const s = this.el.style;
+    const pct = Math.round((style?.opacity ?? 1) * 100);
     if (style?.accent) s.setProperty("--pane-accent", style.accent);
     else s.removeProperty("--pane-accent");
     if (style?.bg) s.setProperty("--pane-bg", style.bg);
     else s.removeProperty("--pane-bg");
-    s.setProperty("--pane-alpha", String(style?.opacity ?? 1));
     if (style?.text) s.setProperty("--pane-text", style.text);
     else s.removeProperty("--pane-text");
+    s.setProperty("--tint", `${pct}%`);
     this.el.classList.toggle("tinted", !!(style?.accent || style?.bg));
+  }
+
+  /** 최신 채팅으로 내린다 (분할 방식이 바뀌거나 창이 새로 붙었을 때) */
+  scrollToLatest(): void {
+    this.chat.scrollToLatest();
   }
 
   setStatus(text: string): void {

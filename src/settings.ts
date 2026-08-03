@@ -9,14 +9,23 @@ export type PaneLayout = "columns" | "rows" | "grid";
 
 /** 채널 창마다 지정할 수 있는 색 */
 export interface PaneStyle {
-  /** 강조색 — 테두리·머리글·전송 버튼 */
+  /** 강조색 — 테두리·머리글 */
   accent?: string;
   /** 창 배경색 */
   bg?: string;
   /** 글자색 */
   text?: string;
-  /** 창 전체 불투명도 (0.3 ~ 1) */
+  /**
+   * 입힌 색의 진하기 (0.1 ~ 1).
+   * 창 자체를 투명하게 만드는 것이 아니라, 강조색·배경색을 얼마나
+   * 진하게 얹을지를 정한다.
+   */
   opacity?: number;
+}
+
+/** 이름을 붙여 저장해 둔 색 조합 */
+export interface PanePreset extends PaneStyle {
+  name: string;
 }
 
 export interface Settings {
@@ -44,8 +53,8 @@ export interface Settings {
   paneLayout: PaneLayout;
   /** 채널별 창 색 설정 */
   paneStyles: Record<string, PaneStyle>;
-  /** 받을 수 있는 통나무 파워 보상을 자동으로 수령 */
-  autoClaimLogPower: boolean;
+  /** 직접 만들어 저장한 색 조합 */
+  panePresets: PanePreset[];
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -62,7 +71,7 @@ const DEFAULT_SETTINGS: Settings = {
   openChannels: [],
   paneLayout: "columns",
   paneStyles: {},
-  autoClaimLogPower: true,
+  panePresets: [],
 };
 
 export interface SavedChannel {

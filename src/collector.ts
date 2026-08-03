@@ -78,7 +78,7 @@ export class ChatCollector {
 
   /** 지금 바로 확인하고, 받을 수 있는 보상이 있으면 받는다 */
   async claimLogPowerNow(channelId: string): Promise<void> {
-    await this.pollLogPower(channelId, true, true);
+    await this.pollLogPower(channelId, true);
   }
 
   isLive(channelId: string): boolean {
@@ -176,7 +176,7 @@ export class ChatCollector {
     }
     this.lives.set(channelId, live);
     this.opts.onLive(channelId, live, justStarted);
-    void this.pollLogPower(channelId, force || justStarted, false);
+    void this.pollLogPower(channelId, force || justStarted);
 
     const shouldCollect =
       getSettings().collectAll || this.viewing.has(channelId);
@@ -202,11 +202,7 @@ export class ChatCollector {
    * 웹에서 버튼을 눌러 받는 것과 같은 수령 요청뿐이고, 이미 받은 것은
    * 다시 부르지 않는다.
    */
-  private async pollLogPower(
-    channelId: string,
-    force: boolean,
-    manual: boolean,
-  ): Promise<void> {
+  private async pollLogPower(channelId: string, force: boolean): Promise<void> {
     if (!hasAuth()) return;
     const last = this.logPowerAt.get(channelId) ?? 0;
     if (!force && Date.now() - last < LOG_POWER_MS) return;
@@ -215,13 +211,12 @@ export class ChatCollector {
     const state = await getLogPowerState(channelId).catch(() => null);
     if (!state) return;
 
+    // 받을 수 있는 보상은 언제나 바로 받는다
     let claimed = 0;
-    if (manual || getSettings().autoClaimLogPower) {
-      const pending = state.claims.filter((id) => !this.claimedIds.has(id));
-      for (const id of pending) {
-        this.claimedIds.add(id);
-        if (await claimLogPower(channelId, id)) claimed += 1;
-      }
+    for (const id of state.claims) {
+      if (this.claimedIds.has(id)) continue;
+      this.claimedIds.add(id);
+      if (await claimLogPower(channelId, id)) claimed += 1;
     }
 
     // 수령했다면 늘어난 값을 다시 읽어 온다

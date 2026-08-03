@@ -472,10 +472,19 @@ const floatLayerEl = document.getElementById("pane-float-layer")!;
  */
 type OpenMode = "replace" | "add" | "popup" | "auto";
 
+function layoutName(): string {
+  return { columns: "세로분할", rows: "가로분할", grid: "격자" }[
+    getSettings().paneLayout
+  ];
+}
+
 /** 열린 창 목록을 저장해 다음 실행 때 그대로 복원한다 */
 function saveOpenChannels(): void {
-  // 띄워 둔 팝업은 임시로 보는 것이라 복원 목록에 넣지 않는다
-  const docked = [...panes].filter(([, p]) => !p.floating).map(([id]) => id);
+  // 띄워 둔 팝업은 임시로 보는 것이라 복원 목록에 넣지 않는다.
+  // 순서는 화면에 놓인 순서를 그대로 따른다 (드래그로 바꾼 순서).
+  const docked = [...panesEl.querySelectorAll<HTMLElement>(".pane")]
+    .map((el) => el.dataset.channelId!)
+    .filter((id) => id && !panes.get(id)?.floating);
   saveSettings({ openChannels: docked });
   collector.viewing = new Set(panes.keys());
 }
@@ -489,6 +498,17 @@ async function openChannel(channelId: string, mode: OpenMode): Promise<void> {
     for (const id of [...panes.keys()]) {
       if (id !== channelId) closePane(id, false);
     }
+  }
+  // 붙일 자리가 없으면 팝업으로 띄운다
+  if (
+    resolved === "add" &&
+    !panes.has(channelId) &&
+    dockedPaneCount() >= paneLimit()
+  ) {
+    notify(
+      `${layoutName()} 배치에서는 창을 ${paneLimit()}개까지 붙일 수 있어 팝업으로 띄웁니다.`,
+    );
+    return openChannel(channelId, "popup");
   }
   const existing = panes.get(channelId);
   if (existing) {
@@ -543,6 +563,8 @@ async function openChannel(channelId: string, mode: OpenMode): Promise<void> {
 
   await collector.syncChannel(channelId).catch(() => {});
   renderPaneStatus(channelId);
+  pane.scrollToLatest();
+  scrollPanesToLatest();
 }
 
 const paneCallbacks = {
@@ -690,6 +712,61 @@ function renderAllPaneStatus(): void {
   for (const id of panes.keys()) renderPaneStatus(id);
 }
 
+/** 창 머리글을 잡고 끌면 붙어 있는 창끼리 순서를 바꾼다 */
+function initPaneReorder(): void {
+  let dragging: string | null = null;
+
+  panesEl.addEventListener("dragstart", (e) => {
+    const head = (e.target as HTMLElement).closest<HTMLElement>(".pane-head");
+    const pane = head?.closest<HTMLElement>(".pane");
+    if (!pane?.dataset.channelId || pane.classList.contains("floating")) return;
+    dragging = pane.dataset.channelId;
+    pane.classList.add("dragging");
+    e.dataTransfer?.setData("text/plain", dragging);
+  });
+
+  panesEl.addEventListener("dragend", () => {
+    dragging = null;
+    for (const el of panesEl.querySelectorAll(".dragging, .drop-target")) {
+      el.classList.remove("dragging", "drop-target");
+    }
+  });
+
+  panesEl.addEventListener("dragover", (e) => {
+    if (!dragging) return;
+    e.preventDefault();
+    const over = (e.target as HTMLElement).closest<HTMLElement>(".pane");
+    for (const el of panesEl.querySelectorAll(".drop-target")) {
+      el.classList.remove("drop-target");
+    }
+    if (over && over.dataset.channelId !== dragging) {
+      over.classList.add("drop-target");
+    }
+  });
+
+  panesEl.addEventListener("drop", (e) => {
+    if (!dragging) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const over = (e.target as HTMLElement).closest<HTMLElement>(".pane");
+    const moved = dragging;
+    dragging = null;
+    for (const el of panesEl.querySelectorAll(".drop-target")) {
+      el.classList.remove("drop-target");
+    }
+    if (!over?.dataset.channelId || over.dataset.channelId === moved) return;
+
+    const movedEl = panes.get(moved)?.el;
+    if (!movedEl) return;
+    // 끌어 온 창이 원래 뒤에 있었으면 앞에, 앞에 있었으면 뒤에 끼운다
+    const before =
+      movedEl.compareDocumentPosition(over) & Node.DOCUMENT_POSITION_FOLLOWING;
+    over.insertAdjacentElement(before ? "afterend" : "beforebegin", movedEl);
+    saveOpenChannels();
+    scrollPanesToLatest();
+  });
+}
+
 /** 사이드바에서 창 영역으로 채널을 끌어다 놓으면 나란히 연다 */
 function initPaneDrop(): void {
   panesEl.addEventListener("dragover", (e) => {
@@ -736,14 +813,6 @@ function initSettingsModal(): void {
     notify(
       `로그를 ${logFormatSel.value === "csv" ? "csv" : "txt"} 형식으로 저장합니다.`,
     );
-  });
-
-  const autoClaimInput = document.getElementById(
-    "set-auto-claim",
-  ) as HTMLInputElement;
-  autoClaimInput.checked = getSettings().autoClaimLogPower;
-  autoClaimInput.addEventListener("change", () => {
-    saveSettings({ autoClaimLogPower: autoClaimInput.checked });
   });
 
   const notifyLiveInput = document.getElementById(
@@ -884,20 +953,14 @@ function initSettingsModal(): void {
   });
 
   loginBtn.addEventListener("click", async () => {
+    // 웹뷰에 남은 네이버 세션을 지우고 로그인 화면을 띄우는 일은
+    // Rust 쪽 naver_login이 한꺼번에 처리한다 (창이 곧바로 닫히지 않도록)
+    statusEl.textContent = "로그인 창을 여는 중… (이전 세션 정리)";
     try {
-      if (hasAuth()) {
-        // 이미 로그인된 상태에서 다시 로그인: 웹뷰의 기존 네이버 세션을
-        // 먼저 정리해야 로그인 창이 즉시 닫히지 않고 계정 선택이 가능하다.
-        loginBtn.disabled = true;
-        statusEl.textContent = "기존 로그인 세션 정리 중…";
-        await invoke("naver_logout").catch(() => {});
-        await new Promise((r) => setTimeout(r, 3500));
-        loginBtn.disabled = false;
-      }
       await invoke("naver_login");
     } catch (e) {
-      loginBtn.disabled = false;
       notify(`로그인 창을 열지 못했습니다: ${e}`);
+      statusEl.textContent = `로그인 창을 열지 못했습니다: ${e}`;
     }
   });
 
@@ -920,8 +983,9 @@ function initSettingsModal(): void {
     autInput.value = e.payload.nidAut;
     sesInput.value = e.payload.nidSes;
     void refreshStatus();
-    // 같은 세션이 다시 감지된 경우(버튼 중복 클릭 등)에는 조용히 넘어간다
     if (changed) applyAuthChange("네이버 로그인 완료!");
+    // 같은 계정으로 다시 들어온 경우에도 아무 반응이 없으면 실패로 보이므로 알린다
+    else notify("이미 같은 계정으로 로그인되어 있습니다.");
   });
   void listen("naver-login-cancelled", () => {
     notify("네이버 로그인이 취소되었습니다.");
@@ -946,18 +1010,47 @@ function applyAuthChange(message: string): void {
 
 // ---------- 창 배치 ----------
 
+/**
+ * 배치별로 붙여 둘 수 있는 창 수.
+ * 세로분할은 좌우로 늘어놓아 3개가 넘으면 글이 너무 좁아지고,
+ * 격자는 5×2(또는 2×5)인 10개까지 본다. 가로분할은 스크롤되므로 제한이 없다.
+ */
+const PANE_LIMIT: Record<PaneLayout, number> = {
+  columns: 3,
+  rows: 99,
+  grid: 10,
+};
+
+function paneLimit(): number {
+  return PANE_LIMIT[getSettings().paneLayout];
+}
+
 function applyPaneLayout(): void {
   const layout = getSettings().paneLayout;
   panesEl.classList.remove("layout-columns", "layout-rows", "layout-grid");
   panesEl.classList.add(`layout-${layout}`);
-  // 격자는 창 수에 따라 열 수를 정한다 (2개면 2열, 5~9개면 3열…)
+
+  // 격자는 창 수와 화면 비율에 맞춰 열 수를 정한다.
+  // 가로로 넓으면 5열까지 늘리고, 세로로 긴 화면에서는 열을 줄여
+  // 2×5처럼 세워서도 쓸 수 있게 한다.
   const n = Math.max(1, dockedPaneCount());
-  panesEl.style.setProperty("--cols", String(Math.ceil(Math.sqrt(n))));
+  const box = panesEl.getBoundingClientRect();
+  const ratio = box.height > 0 ? box.width / box.height : 1.6;
+  const cols = Math.min(5, Math.max(1, Math.round(Math.sqrt(n * ratio))));
+  panesEl.style.setProperty("--cols", String(cols));
+
   for (const btn of document.querySelectorAll<HTMLButtonElement>(
     "#pane-layout button",
   )) {
     btn.classList.toggle("active", btn.dataset.layout === layout);
   }
+}
+
+/** 배치가 바뀌면 창 높이가 달라지므로 모두 최신 채팅으로 내린다 */
+function scrollPanesToLatest(): void {
+  requestAnimationFrame(() => {
+    for (const pane of panes.values()) pane.scrollToLatest();
+  });
 }
 
 function initPaneLayout(): void {
@@ -967,9 +1060,12 @@ function initPaneLayout(): void {
     btn.addEventListener("click", () => {
       saveSettings({ paneLayout: btn.dataset.layout as PaneLayout });
       applyPaneLayout();
+      scrollPanesToLatest();
     });
   }
   applyPaneLayout();
+  // 창 크기가 바뀌면 격자 열 수도 다시 계산한다
+  window.addEventListener("resize", () => applyPaneLayout());
 }
 
 // ---------- 유저 우클릭 메뉴 (메모 · 강조 · 차단) ----------
@@ -1135,16 +1231,19 @@ function initHighlightDialog(): void {
 
 // ---------- 창 색 ----------
 
-/** 창 색 미리 준비해 둔 조합 (강조색, 배경색) */
-const PANE_PRESETS: [string, string][] = [
-  ["#00e6a1", "#14161b"],
-  ["#4d9fff", "#121722"],
-  ["#ff7bd5", "#1c1420"],
-  ["#ff9f43", "#1d1812"],
-  ["#9b7bff", "#171426"],
-  ["#ffd93d", "#1d1b12"],
-  ["#ff6b6b", "#1e1416"],
-  ["#b0bec5", "#15171a"],
+/** 기본 배경색 — 모든 기본 프리셋이 함께 쓴다 (rgb 20 23 38) */
+const PRESET_BG = "#141726";
+
+/** 미리 준비해 둔 강조색 */
+const PRESET_ACCENTS = [
+  "#00e6a1",
+  "#4d9fff",
+  "#ff7bd5",
+  "#ff9f43",
+  "#9b7bff",
+  "#ffd93d",
+  "#ff6b6b",
+  "#b0bec5",
 ];
 
 let styleChannelId: string | null = null;
@@ -1179,14 +1278,46 @@ function openPaneStyle(channelId: string): void {
     String(opacity);
   document.getElementById("pane-opacity-val")!.textContent = `${opacity}%`;
 
-  document.getElementById("pane-style-presets")!.innerHTML = PANE_PRESETS.map(
-    ([accent, bg]) =>
-      `<button class="swatch${accent === st.accent ? " active" : ""}" data-accent="${accent}" data-bg="${bg}" ` +
-      `style="background:${bg};border-color:${accent}" title="${accent}">` +
-      `<span style="background:${accent}"></span></button>`,
+  renderPresets(st);
+  dialog.showModal();
+}
+
+/** 기본 조합 + 내가 저장해 둔 조합을 함께 보여준다 */
+function renderPresets(current: PaneStyle): void {
+  const swatch = (
+    accent: string,
+    bg: string,
+    label: string,
+    extra = "",
+  ): string =>
+    `<button class="swatch${accent === current.accent ? " active" : ""}" ` +
+    `data-accent="${escapeHtml(accent)}" data-bg="${escapeHtml(bg)}"${extra} ` +
+    `style="background:${escapeHtml(bg)};border-color:${escapeHtml(accent)}" ` +
+    `title="${escapeHtml(label)}"><span style="background:${escapeHtml(accent)}"></span></button>`;
+
+  document.getElementById("pane-style-presets")!.innerHTML = PRESET_ACCENTS.map(
+    (accent) => swatch(accent, PRESET_BG, accent),
   ).join("");
 
-  dialog.showModal();
+  const saved = getSettings().panePresets;
+  const savedEl = document.getElementById("pane-style-saved")!;
+  savedEl.innerHTML = saved.length
+    ? saved
+        .map(
+          (p, i) =>
+            `<span class="preset-chip">` +
+            swatch(
+              p.accent ?? "#00e6a1",
+              p.bg ?? PRESET_BG,
+              p.name,
+              ` data-text="${escapeHtml(p.text ?? "")}" data-opacity="${p.opacity ?? 1}"`,
+            ) +
+            `<span class="preset-name">${escapeHtml(p.name)}</span>` +
+            `<button class="preset-del" data-del="${i}" title="이 조합 지우기">×</button>` +
+            `</span>`,
+        )
+        .join("")
+    : `<span class="settings-help">저장해 둔 조합이 없습니다.</span>`;
 }
 
 function initPaneStyleDialog(): void {
@@ -1219,18 +1350,62 @@ function initPaneStyleDialog(): void {
     live();
   });
 
+  /** 프리셋을 누르면 그 조합을 그대로 입힌다 */
+  const usePreset = (e: Event) => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-accent]");
+    if (!el || !styleChannelId) return;
+    accent.value = el.dataset.accent!;
+    bg.value = el.dataset.bg!;
+    if (el.dataset.text) text.value = el.dataset.text;
+    if (el.dataset.opacity) {
+      opacity.value = String(Math.round(Number(el.dataset.opacity) * 100));
+      document.getElementById("pane-opacity-val")!.textContent =
+        `${opacity.value}%`;
+    }
+    live();
+    for (const s of document.querySelectorAll(".swatch")) {
+      s.classList.toggle("active", s === el);
+    }
+  };
   document
     .getElementById("pane-style-presets")!
-    .addEventListener("click", (e) => {
-      const el = (e.target as HTMLElement).closest<HTMLElement>("[data-accent]");
-      if (!el || !styleChannelId) return;
-      accent.value = el.dataset.accent!;
-      bg.value = el.dataset.bg!;
-      live();
-      for (const s of document.querySelectorAll("#pane-style-presets .swatch")) {
-        s.classList.toggle("active", s === el);
-      }
+    .addEventListener("click", usePreset);
+
+  const savedEl = document.getElementById("pane-style-saved")!;
+  savedEl.addEventListener("click", (e) => {
+    const del = (e.target as HTMLElement).closest<HTMLElement>("[data-del]");
+    if (del) {
+      const presets = [...getSettings().panePresets];
+      presets.splice(Number(del.dataset.del), 1);
+      saveSettings({ panePresets: presets });
+      renderPresets(styleChannelId ? paneStyleOf(styleChannelId) : {});
+      return;
+    }
+    usePreset(e);
+  });
+
+  // 지금 색 조합을 이름 붙여 저장
+  const nameInput = document.getElementById("preset-name") as HTMLInputElement;
+  document.getElementById("preset-save")!.addEventListener("click", () => {
+    const name = nameInput.value.trim();
+    if (!name) {
+      nameInput.focus();
+      return;
+    }
+    const presets = [...getSettings().panePresets].filter(
+      (p) => p.name !== name,
+    );
+    presets.push({
+      name,
+      accent: accent.value,
+      bg: bg.value,
+      text: text.value,
+      opacity: Number(opacity.value) / 100,
     });
+    saveSettings({ panePresets: presets });
+    nameInput.value = "";
+    renderPresets(styleChannelId ? paneStyleOf(styleChannelId) : {});
+  });
 
   document.getElementById("pane-style-reset")!.addEventListener("click", () => {
     if (styleChannelId) savePaneStyle(styleChannelId, null);
@@ -1441,6 +1616,7 @@ async function main(): Promise<void> {
   initChannelOrder();
   initSidebarToggle();
   initPaneDrop();
+  initPaneReorder();
   initPaneLayout();
   initUserMenu();
   initNoteDialog();
