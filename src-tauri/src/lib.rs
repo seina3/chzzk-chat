@@ -104,8 +104,52 @@ async fn naver_login(app: AppHandle) -> Result<(), String> {
                 break;
             };
 
-            // 창이 열리자마자 닫히지 않도록, 처음 몇 초는 판정하지 않는다
+            // 창이 열리자마자 닫히지 않도록, 처음 몇 초는 판정하지 않는다.
+            // 그동안 창이 실제로 보이는지도 확인해, 안 보이면 다시 띄우고
+            // 화면 밖에 놓였으면 안쪽으로 끌어온다.
             if ticks <= LOGIN_WARMUP_SECS {
+                if ticks == 2 {
+                    // 창 상태 조회는 메인 스레드를 기다리므로 블로킹 스레드에서 한다
+                    let w = win.clone();
+                    let checked = tauri::async_runtime::spawn_blocking(move || {
+                        let visible = w.is_visible().unwrap_or(false);
+                        if !visible {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                        // 모니터 밖에 놓였으면 안쪽으로 끌어온다
+                        let off_screen = w
+                            .outer_position()
+                            .map(|p| {
+                                p.x < -2000 || p.y < -2000 || p.x > 20000 || p.y > 20000
+                            })
+                            .unwrap_or(false);
+                        if off_screen {
+                            let _ =
+                                w.set_position(tauri::PhysicalPosition::new(120i32, 80i32));
+                        }
+                        (visible, off_screen)
+                    })
+                    .await;
+                    if let Ok((visible, off_screen)) = checked {
+                        let _ = app.emit(
+                            "naver-login-progress",
+                            format!(
+                                "로그인 창 상태: {}{}",
+                                if visible {
+                                    "표시됨"
+                                } else {
+                                    "숨겨져 있어 다시 띄웠습니다"
+                                },
+                                if off_screen {
+                                    " · 화면 밖이라 안쪽으로 옮겼습니다"
+                                } else {
+                                    ""
+                                },
+                            ),
+                        );
+                    }
+                }
                 continue;
             }
 
