@@ -540,8 +540,10 @@ button:disabled {
 }
 
 .pane {
+  /* 창 너비에 따라 머리글 항목을 줄일 수 있도록 컨테이너로 삼는다 */
+  container-type: inline-size;
   flex: 1 1 0;
-  min-width: 340px;
+  min-width: 300px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -608,8 +610,9 @@ button:disabled {
 .pane-head {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   padding: 10px 12px;
+  min-width: 0;
   background: linear-gradient(180deg, rgb(255 255 255 / 0.035), transparent);
   border-bottom: 1px solid var(--border-soft);
 }
@@ -655,7 +658,10 @@ button:disabled {
   box-shadow: 0 0 12px rgb(255 90 82 / 0.35);
 }
 
+/* 채널명이 가장 중요하므로 자리를 먼저 차지하고, 곁의 숫자들이 먼저 줄어든다 */
 .pane-name {
+  flex: 1 1 auto;
+  min-width: 3.5em;
   font-weight: 700;
   font-size: 13.5px;
   overflow: hidden;
@@ -668,7 +674,10 @@ button:disabled {
   color: var(--text-dim);
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .pane-viewers::before {
@@ -2018,4 +2027,41 @@ textarea:focus {
 
 .pane:not(.floating) .pane-head {
   cursor: grab;
+}
+
+/*
+ * 좁은 창에서는 머리글 항목을 하나씩 접어 채널명이 잘리지 않게 한다.
+ * 덜 중요한 것(업타임 → 통나무 → 시청자 → 제목) 순으로 사라진다.
+ */
+@container (max-width: 430px) {
+  .pane-uptime {
+    display: none;
+  }
+}
+
+@container (max-width: 380px) {
+  .pane-power {
+    display: none;
+  }
+
+  .pane-head {
+    gap: 8px;
+    padding: 9px 10px;
+  }
+
+  .pane-img {
+    width: 30px;
+    height: 30px;
+  }
+}
+
+@container (max-width: 330px) {
+  .pane-viewers {
+    display: none;
+  }
+
+  .pane-tools .pane-streamer,
+  .pane-tools .pane-style {
+    display: none;
+  }
 }

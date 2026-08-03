@@ -6,11 +6,8 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 const LOGIN_WINDOW: &str = "naver-login";
 const LOGIN_URL: &str =
     "https://nid.naver.com/nidlogin.login?url=https%3A%2F%2Fchzzk.naver.com%2F";
-/// 로그인 창을 열 때 먼저 들르는 주소. 웹뷰에 남아 있던 네이버 세션을 지워
-/// 창이 곧바로 닫히지 않고 로그인 화면이 제대로 뜨게 한다.
-const LOGOUT_URL: &str =
-    "https://nid.naver.com/nidlogin.logout?returl=https%3A%2F%2Fnid.naver.com%2Fnidlogin.login%3Furl%3Dhttps%253A%252F%252Fchzzk.naver.com%252F";
-/// 세션을 지우고 로그인 화면이 뜨기까지 기다리는 시간 (초)
+/// 창을 연 뒤 이만큼(초)은 남아 있던 쿠키를 로그인으로 보지 않는다.
+/// 이 시간이 지나야 성공 판정을 하므로, 창이 열리자마자 닫히지 않는다.
 const LOGIN_WARMUP_SECS: u32 = 3;
 
 #[derive(Clone, Serialize)]
@@ -76,15 +73,23 @@ async fn naver_login(app: AppHandle) -> Result<(), String> {
         let _ = w.set_focus();
         return Ok(());
     }
-    // 먼저 로그아웃 주소로 열어 웹뷰에 남은 세션을 지운다.
-    // (남아 있으면 창이 열리자마자 로그인으로 판정되어 곧바로 닫혀 버린다)
-    let url: Url = LOGOUT_URL.parse().map_err(|e: url::ParseError| e.to_string())?;
-    WebviewWindowBuilder::new(&app, LOGIN_WINDOW, WebviewUrl::External(url))
+    let url: Url = LOGIN_URL.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let win = WebviewWindowBuilder::new(&app, LOGIN_WINDOW, WebviewUrl::External(url))
         .title("네이버 로그인")
         .inner_size(520.0, 720.0)
         .center()
+        .visible(true)
+        .focused(true)
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("로그인 창 생성 실패: {e}"))?;
+    // 창을 확실히 앞으로 (다른 창 뒤에 열려 안 보이는 경우 방지)
+    let _ = win.show();
+    let _ = win.unminimize();
+    let _ = win.set_focus();
+    let _ = app.emit(
+        "naver-login-progress",
+        "로그인 창을 열었습니다. 네이버 계정으로 로그인해 주세요.".to_string(),
+    );
 
     tauri::async_runtime::spawn(async move {
         // 검증에 실패한 쿠키 값. 서버 쪽에서 세션이 완성되면 쿠키 값이
@@ -99,19 +104,8 @@ async fn naver_login(app: AppHandle) -> Result<(), String> {
                 break;
             };
 
-            // 세션을 지우는 동안에는 남아 있던 쿠키를 로그인으로 오해하지 않는다
-            if ticks < LOGIN_WARMUP_SECS {
-                continue;
-            }
-            if ticks == LOGIN_WARMUP_SECS {
-                // 로그아웃이 끝났으니 로그인 화면으로 보낸다
-                if let Ok(login) = LOGIN_URL.parse::<Url>() {
-                    let _ = win.navigate(login);
-                }
-                let _ = app.emit(
-                    "naver-login-progress",
-                    "로그인 화면을 열었습니다. 네이버 계정으로 로그인해 주세요.".to_string(),
-                );
+            // 창이 열리자마자 닫히지 않도록, 처음 몇 초는 판정하지 않는다
+            if ticks <= LOGIN_WARMUP_SECS {
                 continue;
             }
 
@@ -139,6 +133,15 @@ async fn naver_login(app: AppHandle) -> Result<(), String> {
             }
             match verify_chzzk_login(&pair.0, &pair.1).await {
                 Ok(()) => {
+                    // 창을 열자마자 성공했다면 이미 로그인되어 있던 것이므로 알려 준다
+                    if ticks <= LOGIN_WARMUP_SECS + 2 {
+                        let _ = app.emit(
+                            "naver-login-progress",
+                            "이미 네이버에 로그인되어 있어 바로 완료했습니다. \
+                             다른 계정으로 바꾸려면 먼저 «네이버 로그아웃»을 눌러 주세요."
+                                .to_string(),
+                        );
+                    }
                     let _ = app.emit(
                         "naver-login-success",
                         NaverCookies { nid_aut: pair.0, nid_ses: pair.1 },

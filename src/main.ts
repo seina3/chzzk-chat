@@ -735,6 +735,7 @@ function initPaneReorder(): void {
   panesEl.addEventListener("dragover", (e) => {
     if (!dragging) return;
     e.preventDefault();
+    autoScrollPanes(e);
     const over = (e.target as HTMLElement).closest<HTMLElement>(".pane");
     for (const el of panesEl.querySelectorAll(".drop-target")) {
       el.classList.remove("drop-target");
@@ -767,11 +768,26 @@ function initPaneReorder(): void {
   });
 }
 
+/**
+ * 끌고 있는 동안 창 영역 가장자리에 가까워지면 저절로 밀어 준다.
+ * 화면 밖으로 스크롤된 창까지 옮길 수 있어야 하므로 양쪽·위아래 모두 본다.
+ */
+function autoScrollPanes(e: DragEvent): void {
+  const box = panesEl.getBoundingClientRect();
+  const edge = 90;
+  const step = 24;
+  if (e.clientX < box.left + edge) panesEl.scrollLeft -= step;
+  else if (e.clientX > box.right - edge) panesEl.scrollLeft += step;
+  if (e.clientY < box.top + edge) panesEl.scrollTop -= step;
+  else if (e.clientY > box.bottom - edge) panesEl.scrollTop += step;
+}
+
 /** 사이드바에서 창 영역으로 채널을 끌어다 놓으면 나란히 연다 */
 function initPaneDrop(): void {
   panesEl.addEventListener("dragover", (e) => {
     if (!dragChannelId) return;
     e.preventDefault();
+    autoScrollPanes(e);
     panesEl.classList.add("drop-here");
   });
   panesEl.addEventListener("dragleave", (e) => {
@@ -953,11 +969,17 @@ function initSettingsModal(): void {
   });
 
   loginBtn.addEventListener("click", async () => {
-    // 웹뷰에 남은 네이버 세션을 지우고 로그인 화면을 띄우는 일은
-    // Rust 쪽 naver_login이 한꺼번에 처리한다 (창이 곧바로 닫히지 않도록)
-    statusEl.textContent = "로그인 창을 여는 중… (이전 세션 정리)";
+    statusEl.textContent = "로그인 창을 여는 중…";
     try {
       await invoke("naver_login");
+      // 창이 떴다는 진행 알림이 오지 않으면 사용자가 원인을 알 수 있게 한다
+      setTimeout(() => {
+        if (statusEl.textContent === "로그인 창을 여는 중…") {
+          statusEl.textContent =
+            "로그인 창이 뜨지 않으면 다른 창 뒤에 가려졌는지 확인해 주세요. " +
+            "계속 안 되면 아래 «수동 쿠키 입력»을 쓸 수 있습니다.";
+        }
+      }, 4000);
     } catch (e) {
       notify(`로그인 창을 열지 못했습니다: ${e}`);
       statusEl.textContent = `로그인 창을 열지 못했습니다: ${e}`;
