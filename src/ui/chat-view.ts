@@ -20,12 +20,12 @@ export class ChatView {
   private autoScroll = true;
 
   constructor(
-    containerId: string,
-    scrollBtnId: string,
+    container: HTMLElement,
+    scrollBtn: HTMLButtonElement,
     private onUserClick: (userIdHash: string, nickname: string) => void,
   ) {
-    this.container = document.getElementById(containerId)!;
-    this.scrollBtn = document.getElementById(scrollBtnId) as HTMLButtonElement;
+    this.container = container;
+    this.scrollBtn = scrollBtn;
 
     this.container.addEventListener("click", (e) => {
       const nick = (e.target as HTMLElement).closest<HTMLElement>(".nick");

@@ -1,22 +1,32 @@
 import type { ChannelInfo, LiveInfo } from "../chzzk/types";
 import { formatNumber } from "./render";
 
-/** 상단 방송 정보 대시보드: 제목/카테고리/시청자/업타임 */
+/**
+ * 창 하나의 방송 정보 머리글: 제목/카테고리/시청자/업타임.
+ * 여러 채널을 나란히 볼 수 있으므로 창마다 하나씩 만든다.
+ */
 export class Dashboard {
-  private root = document.getElementById("dashboard")!;
-  private imgEl = document.getElementById("dash-img") as HTMLImageElement;
-  private nameEl = document.getElementById("dash-name")!;
-  private liveEl = document.getElementById("dash-live")!;
-  private titleEl = document.getElementById("dash-title")!;
-  private categoryEl = document.getElementById("dash-category")!;
-  private viewersEl = document.getElementById("dash-viewers")!;
-  private uptimeEl = document.getElementById("dash-uptime")!;
+  private imgEl: HTMLImageElement;
+  private nameEl: HTMLElement;
+  private liveEl: HTMLElement;
+  private titleEl: HTMLElement;
+  private categoryEl: HTMLElement;
+  private viewersEl: HTMLElement;
+  private uptimeEl: HTMLElement;
 
   private openDate: number | null = null;
   private uptimeTimer: ReturnType<typeof setInterval> | null = null;
 
-  hide(): void {
-    this.root.classList.add("hidden");
+  constructor(private root: HTMLElement) {
+    const pick = <T extends HTMLElement>(cls: string) =>
+      root.querySelector<T>(`.${cls}`)!;
+    this.imgEl = pick<HTMLImageElement>("pane-img");
+    this.nameEl = pick("pane-name");
+    this.liveEl = pick("pane-live");
+    this.titleEl = pick("pane-title");
+    this.categoryEl = pick("pane-category");
+    this.viewersEl = pick("pane-viewers");
+    this.uptimeEl = pick("pane-uptime");
   }
 
   setChannel(info: ChannelInfo): void {
@@ -31,6 +41,10 @@ export class Dashboard {
     this.update(null);
   }
 
+  setName(name: string): void {
+    this.nameEl.textContent = name;
+  }
+
   update(live: LiveInfo | null): void {
     const isLive = live?.status === "OPEN";
     this.liveEl.classList.toggle("on-air", isLive);
@@ -38,7 +52,7 @@ export class Dashboard {
     this.titleEl.textContent = live?.liveTitle ?? "";
     this.categoryEl.textContent = live?.categoryValue ?? "";
     this.viewersEl.textContent = isLive
-      ? `시청자 ${formatNumber(live!.concurrentUserCount)}명`
+      ? `${formatNumber(live!.concurrentUserCount)}명`
       : "";
 
     if (isLive && live?.openDate) {
@@ -49,6 +63,12 @@ export class Dashboard {
       this.openDate = null;
     }
     this.restartUptime();
+  }
+
+  /** 창을 닫을 때 타이머 정리 */
+  dispose(): void {
+    if (this.uptimeTimer) clearInterval(this.uptimeTimer);
+    this.uptimeTimer = null;
   }
 
   private restartUptime(): void {
@@ -65,7 +85,7 @@ export class Dashboard {
       const h = Math.floor(sec / 3600);
       const m = Math.floor((sec % 3600) / 60);
       const s = sec % 60;
-      this.uptimeEl.textContent = `업타임 ${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+      this.uptimeEl.textContent = `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     };
     tick();
     this.uptimeTimer = setInterval(tick, 1000);

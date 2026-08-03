@@ -21,6 +21,10 @@ export interface Settings {
   dbDir: string;
   /** 사이드바 채널 정렬 */
   channelOrder: ChannelOrder;
+  /** 채널 목록을 접어 뒀는지 */
+  sidebarCollapsed: boolean;
+  /** 나란히 열어 둔 채널들 (다음 실행 때 그대로 복원) */
+  openChannels: string[];
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -33,6 +37,8 @@ const DEFAULT_SETTINGS: Settings = {
   notifyLive: true,
   dbDir: "",
   channelOrder: "manual",
+  sidebarCollapsed: false,
+  openChannels: [],
 };
 
 export interface SavedChannel {

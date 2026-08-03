@@ -127,8 +127,8 @@ export class ChatCollector {
 
     const collectAll = getSettings().collectAll;
     for (const ch of channels) {
-      // 전체 수집이 꺼져 있으면 활성 채널만 연결 (main이 activeOnly로 지정)
-      if (!collectAll && ch.channelId !== this.activeOnly) {
+      // 전체 수집이 꺼져 있으면 보고 있는 채널만 연결한다
+      if (!collectAll && !this.viewing.has(ch.channelId)) {
         await this.disconnect(ch.channelId);
         // 방송 상태는 알림을 위해 계속 확인한다
       }
@@ -136,8 +136,8 @@ export class ChatCollector {
     }
   }
 
-  /** 전체 수집이 꺼져 있을 때 연결을 유지할 채널 */
-  activeOnly: string | null = null;
+  /** 전체 수집이 꺼져 있을 때에도 연결을 유지할 채널 (지금 화면에 열린 창들) */
+  viewing = new Set<string>();
 
   private async poll(channelId: string, force: boolean): Promise<void> {
     const status = await getLiveStatus(channelId).catch(() => null);
@@ -158,7 +158,7 @@ export class ChatCollector {
     this.opts.onLive(channelId, live, justStarted);
 
     const shouldCollect =
-      getSettings().collectAll || this.activeOnly === channelId;
+      getSettings().collectAll || this.viewing.has(channelId);
     if (!shouldCollect) return;
 
     if (live.status !== "OPEN" || !live.chatChannelId) {

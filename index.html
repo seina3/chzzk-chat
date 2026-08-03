@@ -9,6 +9,10 @@
   <body>
     <div id="app">
       <aside id="sidebar">
+        <div class="sidebar-top">
+          <span class="sidebar-brand">치지직 채팅</span>
+          <button id="sidebar-toggle" title="채널 목록 접기 (Ctrl+B)" aria-label="채널 목록 접기">«</button>
+        </div>
         <div class="sidebar-header">
           <input id="channel-input" placeholder="채널 URL 또는 ID" spellcheck="false" autocomplete="off" />
           <button id="add-channel">추가</button>
@@ -22,45 +26,62 @@
         </div>
         <ul id="channel-list"></ul>
         <div class="sidebar-footer">
-          <button id="open-search">🔍 검색</button>
-          <button id="open-donations">📊 집계</button>
-          <button id="open-settings">⚙ 설정</button>
+          <button id="open-search"><span class="ico">🔍</span><span class="lbl">검색</span></button>
+          <button id="open-donations"><span class="ico">📊</span><span class="lbl">집계</span></button>
+          <button id="open-settings"><span class="ico">⚙</span><span class="lbl">설정</span></button>
         </div>
       </aside>
 
-      <main id="main">
-        <header id="dashboard" class="hidden">
-          <img id="dash-img" class="hidden" alt="" />
-          <div class="dash-text">
-            <div class="dash-row1">
-              <span id="dash-live">오프라인</span>
-              <span id="dash-name"></span>
-              <span id="dash-viewers"></span>
-              <span id="dash-uptime"></span>
-            </div>
-            <div class="dash-row2">
-              <span id="dash-title"></span>
-              <span id="dash-category"></span>
-            </div>
-          </div>
-        </header>
-
-        <div id="chat-container">
-          <div id="chat-messages"></div>
-          <button id="scroll-bottom" class="hidden">↓ 최신 채팅</button>
-        </div>
-
-        <div id="status-bar"><span id="conn-status"></span></div>
-
-        <div id="chat-input-row">
-          <input id="chat-input" disabled autocomplete="off" spellcheck="false" />
-          <button id="send-btn" disabled>전송</button>
+      <main id="panes">
+        <div id="panes-empty">
+          <p class="empty-title">보고 있는 채널이 없습니다</p>
+          <p class="empty-sub">
+            왼쪽에서 채널을 누르면 열립니다.<br />
+            채널을 이곳으로 <b>끌어다 놓거나</b> <b>Ctrl+클릭</b>하면 나란히 볼 수 있습니다.
+          </p>
         </div>
       </main>
     </div>
 
+    <div id="toast" class="hidden"></div>
+
+    <template id="pane-template">
+      <section class="pane">
+        <header class="pane-head">
+          <img class="pane-img hidden" alt="" />
+          <div class="pane-text">
+            <div class="pane-row1">
+              <span class="pane-live">오프라인</span>
+              <span class="pane-name"></span>
+              <span class="pane-viewers"></span>
+              <span class="pane-uptime"></span>
+            </div>
+            <div class="pane-row2">
+              <span class="pane-title"></span>
+              <span class="pane-category"></span>
+            </div>
+          </div>
+          <button class="pane-close" title="이 창 닫기" aria-label="닫기">×</button>
+        </header>
+
+        <div class="pane-chat">
+          <div class="pane-messages"></div>
+          <button class="pane-scroll hidden">↓ 최신 채팅</button>
+        </div>
+
+        <div class="pane-status"></div>
+
+        <div class="pane-input">
+          <input class="pane-text-input" disabled autocomplete="off" spellcheck="false" />
+          <button class="pane-send" disabled>전송</button>
+        </div>
+      </section>
+    </template>
+
     <ul id="channel-menu" class="context-menu hidden">
-      <li data-action="open">채널 열기</li>
+      <li data-action="show">이 채널만 보기</li>
+      <li data-action="add-pane">옆에 함께 보기</li>
+      <li data-action="open">치지직에서 열기</li>
       <li data-action="copy">채널 링크 복사</li>
       <li data-action="rename">별명 바꾸기</li>
       <li data-action="reset-name">원래 이름으로</li>

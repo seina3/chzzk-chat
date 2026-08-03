@@ -29,17 +29,14 @@ import {
   type LogFormat,
   type SavedChannel,
 } from "./settings";
-import { ChatView } from "./ui/chat-view";
-import { Dashboard } from "./ui/dashboard";
 import { DonationsModal } from "./ui/donations";
 import { GlobalSearchModal } from "./ui/global-search";
+import { ChannelPane } from "./ui/pane";
 import { escapeHtml } from "./ui/render";
 import { UserHistoryModal } from "./ui/user-history";
 
-let activeChannelId: string | null = null;
 let notifyGranted = false;
 
-const dashboard = new Dashboard();
 const userModal = new UserHistoryModal();
 const searchModal = new GlobalSearchModal((uid, nick) => {
   void userModal.open(uid, nick);
@@ -49,49 +46,41 @@ const donationsModal = new DonationsModal(
     void userModal.open(uid, nick, donationsOnly, channelId);
   },
 );
-const chatView = new ChatView("chat-messages", "scroll-bottom", (uid, nick) => {
-  void userModal.open(uid, nick);
-});
 
-const chatInput = document.getElementById("chat-input") as HTMLInputElement;
-const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
-const statusEl = document.getElementById("conn-status")!;
-
-/** 모든 등록 채널의 채팅을 수집한다 (화면에 보이는 채널과 무관) */
+/** 모든 등록 채널의 채팅을 수집한다 (화면에 열려 있는지와 무관) */
 const collector = new ChatCollector({
   onMessage: (m) => {
     saveMessage(m);
     logMessage(m);
-    if (m.channelId === activeChannelId) chatView.add(m);
+    panes.get(m.channelId)?.chat.add(m);
   },
   onBlind: (channelId, uid, time) => {
     // 기록에도 남겨야 검색·유저 기록에서도 취소선으로 보인다
     markMessageBlinded(channelId, uid, time);
-    if (channelId === activeChannelId) chatView.markBlinded(uid, time);
+    panes.get(channelId)?.chat.markBlinded(uid, time);
   },
   onError: (channelId, message) => {
-    if (channelId === activeChannelId) chatView.addSystem(`⚠️ ${message}`);
+    const pane = panes.get(channelId);
+    if (pane) pane.chat.addSystem(`⚠️ ${message}`);
     else console.warn(`[${channelId}] ${message}`);
   },
   onDebug: (channelId, direction, frame) => {
-    if (channelId === activeChannelId) chatView.addSystem(`${direction} ${frame}`);
+    panes.get(channelId)?.chat.addSystem(`${direction} ${frame}`);
   },
   onStatus: (channelId) => {
-    if (channelId === activeChannelId) renderConnStatus();
+    renderPaneStatus(channelId);
     renderChannelList();
   },
   onLive: (channelId, live, justStarted) => {
-    if (channelId === activeChannelId) dashboard.update(live);
+    panes.get(channelId)?.dash.update(live);
     // 방송 회차·제목·카테고리 변화를 로그 파일에 반영
     noteLive(channelId, live);
     if (live?.status === "OPEN") markChannelLive(channelId, live.openDate);
     if (justStarted && live) {
-      const name =
-        channelName(channelId);
-      notifyLiveStart(name, live.liveTitle);
-      if (channelId === activeChannelId) {
-        chatView.addSystem(`🔴 방송이 시작되었습니다: ${live.liveTitle}`);
-      }
+      notifyLiveStart(channelName(channelId), live.liveTitle);
+      panes
+        .get(channelId)
+        ?.chat.addSystem(`🔴 방송이 시작되었습니다: ${live.liveTitle}`);
     }
     renderChannelList();
   },
@@ -145,10 +134,10 @@ function renderChannelList(): void {
   listEl.innerHTML = "";
   for (const ch of orderedChannels()) {
     const li = document.createElement("li");
-    li.className = ch.channelId === activeChannelId ? "channel active" : "channel";
+    li.className = panes.has(ch.channelId) ? "channel active" : "channel";
     li.dataset.channelId = ch.channelId;
-    // 직접 정렬일 때만 드래그로 순서를 바꿀 수 있다
-    if (order === "manual") li.draggable = true;
+    // 창 영역으로 끌어다 놓을 수 있어야 하므로 항상 드래그 가능
+    li.draggable = true;
     const img = ch.imageUrl
       ? `<img src="${escapeHtml(ch.imageUrl)}" alt="" loading="lazy">`
       : `<span class="channel-noimg"></span>`;
@@ -163,14 +152,19 @@ function renderChannelList(): void {
     li.title =
       (ch.alias ? `${shown} (원래 이름: ${ch.name})` : shown) +
       `\n${ch.channelId}` +
-      (order === "manual" ? "\n드래그해서 순서를 바꿀 수 있습니다" : "");
+      "\n오른쪽으로 끌어다 놓으면 나란히 볼 수 있습니다" +
+      (order === "manual" ? "\n목록 안에서 끌면 순서가 바뀝니다" : "");
     li.innerHTML = `${img}<span class="channel-name">${escapeHtml(shown)}</span>${rec}${live}<button class="channel-remove" title="삭제">×</button>`;
     li.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).classList.contains("channel-remove")) {
         void removeChannel(ch.channelId);
       } else {
-        void showChannel(ch.channelId);
+        // Ctrl(⌘)을 누르고 누르면 지금 창을 두고 옆에 함께 연다
+        void openChannel(ch.channelId, !(e.ctrlKey || e.metaKey));
       }
+    });
+    li.addEventListener("auxclick", (e) => {
+      if (e.button === 1) void openChannel(ch.channelId, false);
     });
     li.addEventListener("contextmenu", (e) => {
       e.preventDefault();
@@ -243,6 +237,10 @@ function initChannelOrder(): void {
       renderChannelList();
       return;
     }
+    if (getSettings().channelOrder !== "manual") {
+      notify("순서를 바꾸려면 목록 위의 «직접정렬»을 골라 주세요.");
+      return;
+    }
     const channels = getChannels();
     const from = channels.findIndex((c) => c.channelId === moved);
     const to = channels.findIndex((c) => c.channelId === target);
@@ -297,16 +295,22 @@ function initChannelMenu(): void {
 
     const url = `https://chzzk.naver.com/live/${channelId}`;
     switch (action) {
+      case "show":
+        void openChannel(channelId, true);
+        break;
+      case "add-pane":
+        void openChannel(channelId, false);
+        break;
       case "open":
         invoke("open_url", { url }).catch((err) =>
-          chatView.addSystem(`채널을 열지 못했습니다: ${err}`),
+          notify(`채널을 열지 못했습니다: ${err}`),
         );
         break;
       case "copy":
         navigator.clipboard
           .writeText(url)
-          .then(() => chatView.addSystem(`채널 링크를 복사했습니다: ${url}`))
-          .catch(() => chatView.addSystem(`링크 복사에 실패했습니다: ${url}`));
+          .then(() => notify(`채널 링크를 복사했습니다: ${url}`))
+          .catch(() => notify(`링크 복사에 실패했습니다: ${url}`));
         break;
       case "rename":
         openRenameDialog(channelId);
@@ -350,7 +354,8 @@ function setChannelAlias(channelId: string, alias: string): void {
   );
   saveChannels(channels);
   renderChannelList();
-  if (channelId === activeChannelId) void showChannel(channelId);
+  const ch = getChannels().find((c) => c.channelId === channelId);
+  if (ch) panes.get(channelId)?.dash.setName(displayName(ch));
 }
 
 function initRenameDialog(): void {
@@ -386,20 +391,14 @@ function openRenameDialog(channelId: string): void {
 async function removeChannel(channelId: string): Promise<void> {
   saveChannels(getChannels().filter((c) => c.channelId !== channelId));
   await collector.drop(channelId);
-  if (channelId === activeChannelId) {
-    activeChannelId = null;
-    chatView.clear();
-    dashboard.hide();
-    setSendEnabled(false);
-    statusEl.textContent = "";
-  }
+  closePane(channelId, true);
   renderChannelList();
 }
 
 async function addChannel(input: string): Promise<void> {
   const channelId = parseChannelInput(input);
   if (!channelId) {
-    chatView.addSystem("채널 URL 또는 32자리 채널 ID를 입력해 주세요.");
+    notify("채널 URL 또는 32자리 채널 ID를 입력해 주세요.");
     return;
   }
   const channels = getChannels();
@@ -415,93 +414,190 @@ async function addChannel(input: string): Promise<void> {
   }
   renderChannelList();
   await collector.syncChannel(channelId);
-  await showChannel(channelId);
+  await openChannel(channelId, true);
 }
 
-// ---------- 채널 표시 ----------
+// ---------- 채널 창 ----------
+
+/** 지금 열려 있는 창들 (채널 ID → 창) */
+const panes = new Map<string, ChannelPane>();
+/** 마지막으로 만진 창 — 안내 메시지를 여기에 띄운다 */
+let focusedChannelId: string | null = null;
+
+const panesEl = document.getElementById("panes")!;
+const panesEmptyEl = document.getElementById("panes-empty")!;
+
+/** 열린 창 목록을 저장해 다음 실행 때 그대로 복원한다 */
+function saveOpenChannels(): void {
+  saveSettings({ openChannels: [...panes.keys()] });
+  collector.viewing = new Set(panes.keys());
+}
 
 /**
- * 화면에 보여줄 채널을 바꾼다.
- * 수집은 collector가 모든 채널에 대해 계속하고 있으므로 연결은 건드리지 않고,
- * 저장된 최근 대화를 불러와 화면만 전환한다.
+ * 채널 창을 연다.
+ * replace면 다른 창을 모두 닫고 이 채널만, 아니면 오른쪽에 나란히 붙인다.
  */
-async function showChannel(channelId: string): Promise<void> {
-  activeChannelId = channelId;
-  collector.activeOnly = channelId;
-  chatView.clear();
+async function openChannel(channelId: string, replace: boolean): Promise<void> {
+  if (replace) {
+    for (const id of [...panes.keys()]) {
+      if (id !== channelId) closePane(id, false);
+    }
+  }
+  const existing = panes.get(channelId);
+  if (existing) {
+    setFocusedPane(channelId);
+    existing.el.scrollIntoView({ behavior: "smooth", inline: "nearest" });
+    // 다른 창을 닫았다면 그 결과도 저장해 둔다
+    if (replace) {
+      saveOpenChannels();
+      renderChannelList();
+    }
+    return;
+  }
+
+  const pane = new ChannelPane(channelId, {
+    onClose: (id) => closePane(id, true),
+    onSend: (id, text) => void sendTo(id, text),
+    onUserClick: (uid, nick) => void userModal.open(uid, nick),
+    onFocus: (id) => setFocusedPane(id),
+  });
+  panes.set(channelId, pane);
+  panesEl.appendChild(pane.el);
+  panesEmptyEl.classList.add("hidden");
+  setFocusedPane(channelId);
+  saveOpenChannels();
   renderChannelList();
-  renderConnStatus();
 
   const info = getChannels().find((c) => c.channelId === channelId);
-  if (info) {
-    dashboard.setChannel({
-      channelId,
-      channelName: info.name,
-      channelImageUrl: info.imageUrl,
-      followerCount: 0,
-    });
-  }
-  dashboard.update(collector.getLive(channelId));
+  pane.dash.setChannel({
+    channelId,
+    channelName: info ? displayName(info) : channelName(channelId),
+    channelImageUrl: info?.imageUrl ?? null,
+    followerCount: 0,
+  });
+  pane.dash.update(collector.getLive(channelId));
+  renderPaneStatus(channelId);
 
   // 수집해 둔 최근 대화를 먼저 보여준다
   const recent = await getRecentMessages(channelId, 200);
-  for (const row of recent) chatView.addStored(row);
-  if (recent.length > 0) chatView.addSystem("─── 저장된 최근 대화 ───");
+  if (!panes.has(channelId)) return; // 불러오는 사이에 닫혔다
+  for (const row of recent) pane.chat.addStored(row);
+  if (recent.length > 0) pane.chat.addSystem("─── 저장된 최근 대화 ───");
 
   await collector.syncChannel(channelId).catch(() => {});
-  renderConnStatus();
+  renderPaneStatus(channelId);
 }
 
-function renderConnStatus(): void {
-  if (!activeChannelId) {
-    statusEl.textContent = "";
-    setSendEnabled(false);
-    return;
+function closePane(channelId: string, persist: boolean): void {
+  const pane = panes.get(channelId);
+  if (!pane) return;
+  pane.dispose();
+  panes.delete(channelId);
+  if (focusedChannelId === channelId) {
+    focusedChannelId = panes.keys().next().value ?? null;
+    if (focusedChannelId) panes.get(focusedChannelId)!.setFocused(true);
   }
-  const status = collector.getStatus(activeChannelId);
-  const live = collector.getLive(activeChannelId);
+  panesEmptyEl.classList.toggle("hidden", panes.size > 0);
+  if (persist) {
+    saveOpenChannels();
+    renderChannelList();
+  }
+}
+
+function setFocusedPane(channelId: string): void {
+  if (focusedChannelId === channelId) return;
+  focusedChannelId = channelId;
+  for (const [id, pane] of panes) pane.setFocused(id === channelId);
+}
+
+/** 안내 메시지 — 포커스된 창이 있으면 그 창에, 없으면 토스트로 */
+function notify(text: string): void {
+  const pane = focusedChannelId ? panes.get(focusedChannelId) : undefined;
+  if (pane) pane.chat.addSystem(text);
+  else showToast(text);
+}
+
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showToast(text: string): void {
+  const el = document.getElementById("toast")!;
+  el.textContent = text;
+  el.classList.remove("hidden");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add("hidden"), 4000);
+}
+
+async function sendTo(channelId: string, text: string): Promise<void> {
+  try {
+    await collector.sendChat(channelId, text);
+  } catch (e) {
+    panes
+      .get(channelId)
+      ?.chat.addSystem(
+        `전송 실패: ${e instanceof Error ? e.message : String(e)}`,
+      );
+  }
+}
+
+function renderPaneStatus(channelId: string): void {
+  const pane = panes.get(channelId);
+  if (!pane) return;
+  const status = collector.getStatus(channelId);
+  const live = collector.getLive(channelId);
+  let text: string;
   switch (status) {
     case "connected":
-      statusEl.textContent = collector.canSend(activeChannelId)
+      text = collector.canSend(channelId)
         ? `연결됨 (${loginNickname ?? "로그인됨"})`
         : "연결됨 (읽기 전용)";
       break;
     case "connecting":
-      statusEl.textContent = "채팅 서버 연결 중…";
+      text = "채팅 서버 연결 중…";
       break;
     case "reconnecting":
-      statusEl.textContent = "연결 끊김 — 재연결 중";
+      text = "연결 끊김 — 재연결 중";
       break;
     default:
-      statusEl.textContent =
+      text =
         live?.status === "OPEN"
           ? "채팅방 연결 대기 중…"
           : "오프라인 (방송이 시작되면 자동으로 수집합니다)";
   }
-  setSendEnabled(collector.canSend(activeChannelId));
+  pane.setStatus(text);
+
+  const canSend = collector.canSend(channelId);
+  pane.setSendEnabled(
+    canSend,
+    canSend
+      ? "채팅 입력…"
+      : hasAuth()
+        ? "연결되면 채팅을 보낼 수 있습니다"
+        : "채팅 전송은 설정에서 네이버 로그인 후 가능합니다 (읽기 전용)",
+  );
 }
 
-// ---------- 채팅 입력 ----------
-
-function setSendEnabled(enabled: boolean): void {
-  chatInput.disabled = !enabled;
-  sendBtn.disabled = !enabled;
-  chatInput.placeholder = enabled
-    ? "채팅 입력…"
-    : hasAuth()
-      ? "연결되면 채팅을 보낼 수 있습니다"
-      : "채팅 전송은 설정에서 네이버 쿠키 등록 후 가능합니다 (읽기 전용)";
+function renderAllPaneStatus(): void {
+  for (const id of panes.keys()) renderPaneStatus(id);
 }
 
-async function sendCurrentInput(): Promise<void> {
-  const text = chatInput.value.trim();
-  if (!text || !activeChannelId) return;
-  try {
-    await collector.sendChat(activeChannelId, text);
-    chatInput.value = "";
-  } catch (e) {
-    chatView.addSystem(`전송 실패: ${e instanceof Error ? e.message : String(e)}`);
-  }
+/** 사이드바에서 창 영역으로 채널을 끌어다 놓으면 나란히 연다 */
+function initPaneDrop(): void {
+  panesEl.addEventListener("dragover", (e) => {
+    if (!dragChannelId) return;
+    e.preventDefault();
+    panesEl.classList.add("drop-here");
+  });
+  panesEl.addEventListener("dragleave", (e) => {
+    if (e.target === panesEl) panesEl.classList.remove("drop-here");
+  });
+  panesEl.addEventListener("drop", (e) => {
+    panesEl.classList.remove("drop-here");
+    const id = dragChannelId;
+    dragChannelId = null;
+    if (!id) return;
+    e.preventDefault();
+    void openChannel(id, false);
+  });
 }
 
 // ---------- 설정 모달 ----------
@@ -527,7 +623,7 @@ function initSettingsModal(): void {
   logFormatSel.addEventListener("change", () => {
     saveSettings({ logFormat: logFormatSel.value as LogFormat });
     resetSessions();
-    chatView.addSystem(
+    notify(
       `로그를 ${logFormatSel.value === "csv" ? "csv" : "txt"} 형식으로 저장합니다.`,
     );
   });
@@ -546,7 +642,7 @@ function initSettingsModal(): void {
   collectAllInput.checked = getSettings().collectAll;
   collectAllInput.addEventListener("change", () => {
     saveSettings({ collectAll: collectAllInput.checked });
-    chatView.addSystem(
+    notify(
       collectAllInput.checked
         ? "모든 등록 채널의 채팅을 수집합니다."
         : "지금 보고 있는 채널만 수집합니다.",
@@ -555,12 +651,12 @@ function initSettingsModal(): void {
   });
 
   document.getElementById("frame-debug-btn")!.addEventListener("click", () => {
-    if (!activeChannelId || !collector.startFrameDebug(activeChannelId)) {
-      chatView.addSystem("⚠️ 진단하려면 먼저 채팅에 연결되어야 합니다.");
+    if (!focusedChannelId || !collector.startFrameDebug(focusedChannelId)) {
+      notify("⚠️ 진단하려면 먼저 채팅에 연결되어야 합니다.");
       return;
     }
     dialog.close();
-    chatView.addSystem(
+    notify(
       "🔎 전송 진단을 시작했습니다. 지금 채팅을 보내 보세요 (15초간 원본 표시).",
     );
   });
@@ -589,7 +685,7 @@ function initSettingsModal(): void {
   });
   document.getElementById("log-dir-open")!.addEventListener("click", () => {
     invoke("open_log_dir", { baseDir: getSettings().logDir || null }).catch(
-      (e) => chatView.addSystem(`폴더 열기 실패: ${e}`),
+      (e) => notify(`폴더 열기 실패: ${e}`),
     );
   });
 
@@ -611,11 +707,11 @@ function initSettingsModal(): void {
       });
       saveSettings({ dbDir: dir });
       dbDirInput.value = dir;
-      chatView.addSystem(
+      notify(
         `DB 위치를 ${target} 으로 정했습니다. 앱을 다시 시작하면 적용됩니다.`,
       );
     } catch (e) {
-      chatView.addSystem(`DB 폴더 변경 실패: ${e}`);
+      notify(`DB 폴더 변경 실패: ${e}`);
       dbDirInput.value = before;
     }
   };
@@ -633,7 +729,7 @@ function initSettingsModal(): void {
   });
   document.getElementById("db-dir-open")!.addEventListener("click", () => {
     invoke("open_dir", { path: currentDbPath }).catch((e) =>
-      chatView.addSystem(`폴더 열기 실패: ${e}`),
+      notify(`폴더 열기 실패: ${e}`),
     );
   });
 
@@ -683,7 +779,7 @@ function initSettingsModal(): void {
       await invoke("naver_login");
     } catch (e) {
       loginBtn.disabled = false;
-      chatView.addSystem(`로그인 창을 열지 못했습니다: ${e}`);
+      notify(`로그인 창을 열지 못했습니다: ${e}`);
     }
   });
 
@@ -710,12 +806,12 @@ function initSettingsModal(): void {
     if (changed) applyAuthChange("네이버 로그인 완료!");
   });
   void listen("naver-login-cancelled", () => {
-    chatView.addSystem("네이버 로그인이 취소되었습니다.");
+    notify("네이버 로그인이 취소되었습니다.");
   });
   // 로그인 창에서 쿠키를 찾는 중의 진행 상황 (문제 진단용)
   void listen<string>("naver-login-progress", (e) => {
     statusEl.textContent = e.payload;
-    chatView.addSystem(e.payload);
+    notify(e.payload);
   });
 
   void refreshStatus();
@@ -723,11 +819,11 @@ function initSettingsModal(): void {
 
 /** 로그인 상태 변경을 반영 — 모든 채널을 새 권한으로 다시 연결 */
 function applyAuthChange(message: string): void {
-  chatView.addSystem(message);
+  notify(message);
   void collector
     .reauth()
-    .then(() => renderConnStatus())
-    .catch((e) => chatView.addSystem(`재접속 실패: ${e}`));
+    .then(() => renderAllPaneStatus())
+    .catch((e) => notify(`재접속 실패: ${e}`));
 }
 
 // ---------- 부트스트랩 ----------
@@ -774,12 +870,37 @@ function initWebviewBehavior(): void {
         e.preventDefault(); // 인쇄 대화상자
       } else if (e.key === "F3" || (ctrl && e.key.toLowerCase() === "g")) {
         e.preventDefault(); // 다음 찾기
+      } else if (ctrl && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleSidebar();
       } else if (e.key === "F5" || (ctrl && e.key.toLowerCase() === "r")) {
         e.preventDefault(); // 새로 고침 — 수집이 끊기므로 막는다
       }
     },
     true,
   );
+}
+
+// ---------- 사이드바 접기 ----------
+
+function applySidebarState(): void {
+  const collapsed = getSettings().sidebarCollapsed;
+  document.getElementById("sidebar")!.classList.toggle("collapsed", collapsed);
+  const btn = document.getElementById("sidebar-toggle")!;
+  btn.textContent = collapsed ? "»" : "«";
+  btn.title = collapsed ? "채널 목록 펼치기 (Ctrl+B)" : "채널 목록 접기 (Ctrl+B)";
+}
+
+function toggleSidebar(): void {
+  saveSettings({ sidebarCollapsed: !getSettings().sidebarCollapsed });
+  applySidebarState();
+}
+
+function initSidebarToggle(): void {
+  document
+    .getElementById("sidebar-toggle")!
+    .addEventListener("click", toggleSidebar);
+  applySidebarState();
 }
 
 /** 지금 열려 있는 DB 파일 경로 (설정 표시·복사에 사용) */
@@ -800,6 +921,8 @@ async function main(): Promise<void> {
   initWebviewBehavior();
   initChannelMenu();
   initChannelOrder();
+  initSidebarToggle();
+  initPaneDrop();
   initRenameDialog();
   document
     .getElementById("open-search")!
@@ -807,7 +930,6 @@ async function main(): Promise<void> {
   document
     .getElementById("open-donations")!
     .addEventListener("click", () => donationsModal.open());
-  setSendEnabled(false);
   renderChannelList();
 
   const input = document.getElementById("channel-input") as HTMLInputElement;
@@ -816,7 +938,7 @@ async function main(): Promise<void> {
     const v = input.value;
     input.value = "";
     void addChannel(v).catch((e) =>
-      chatView.addSystem(`채널 추가 실패: ${e instanceof Error ? e.message : String(e)}`),
+      notify(`채널 추가 실패: ${e instanceof Error ? e.message : String(e)}`),
     );
   };
   addBtn.addEventListener("click", doAdd);
@@ -824,19 +946,18 @@ async function main(): Promise<void> {
     if (e.key === "Enter") doAdd();
   });
 
-  sendBtn.addEventListener("click", () => void sendCurrentInput());
-  chatInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") void sendCurrentInput();
-  });
-
-  const first = getChannels()[0];
-  if (first) {
-    activeChannelId = first.channelId;
-    collector.activeOnly = first.channelId;
+  // 지난번에 열어 뒀던 창들을 복원한다 (없으면 첫 채널 하나)
+  const known = new Set(getChannels().map((c) => c.channelId));
+  const restore = getSettings().openChannels.filter((id) => known.has(id));
+  if (restore.length === 0) {
+    const first = orderedChannels()[0];
+    if (first) restore.push(first.channelId);
   }
+  collector.viewing = new Set(restore);
+
   // 등록된 모든 채널 수집 시작
   await collector.start();
-  if (first) await showChannel(first.channelId);
+  for (const id of restore) await openChannel(id, false);
 }
 
 /** 로그인 닉네임 (상태 표시용) */
