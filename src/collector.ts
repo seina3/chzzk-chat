@@ -2,7 +2,8 @@ import {
   getChatAccessToken,
   getLiveDetail,
   getLiveStatus,
-  getLogPower,
+  claimLogPower,
+  getLogPowerState,
   getUserStatus,
 } from "./chzzk/api";
 import { ChzzkChat, type ChatStatus } from "./chzzk/chat";
@@ -41,6 +42,8 @@ export class ChatCollector {
   private busy = new Set<string>();
   private logPowers = new Map<string, number>();
   private logPowerAt = new Map<string, number>();
+  /** 이미 수령을 시도한 보상 ID — 같은 것을 두 번 부르지 않는다 */
+  private claimedIds = new Set<string>();
   private uid: string | null = null;
   private nickname = "";
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -203,8 +206,11 @@ export class ChatCollector {
   }
 
   /**
-   * 통나무 파워를 읽어 온다.
-   * 적립도 수령도 치지직에서 이뤄지고, 앱은 얼마나 모였는지만 확인한다.
+   * 통나무 파워를 확인하고, 받아 둔 보상이 있으면 조용히 수령한다.
+   *
+   * 적립은 치지직이 하고(시청·팔로우·후원 등), 여기서 하는 일은 웹에서
+   * 버튼을 눌러 받는 것과 같은 수령뿐이다. 평소에는 아무 말도 하지 않고,
+   * 실제로 늘어났을 때만 화면에 알린다.
    */
   private async pollLogPower(channelId: string, force: boolean): Promise<void> {
     if (!hasAuth()) return;
@@ -212,7 +218,22 @@ export class ChatCollector {
     if (!force && Date.now() - last < LOG_POWER_MS) return;
     this.logPowerAt.set(channelId, Date.now());
 
-    const value = await getLogPower(channelId).catch(() => null);
+    const state = await getLogPowerState(channelId).catch(() => null);
+    if (!state) return;
+
+    let claimed = 0;
+    for (const id of state.claims) {
+      if (this.claimedIds.has(id)) continue;
+      this.claimedIds.add(id);
+      if (await claimLogPower(channelId, id)) claimed += 1;
+    }
+
+    // 수령했다면 늘어난 값을 다시 읽어 온다
+    const value =
+      claimed > 0
+        ? ((await getLogPowerState(channelId).catch(() => null))?.power ??
+          state.power)
+        : state.power;
     if (value === null) return;
     this.logPowers.set(channelId, value);
     this.opts.onLogPower(channelId, value);

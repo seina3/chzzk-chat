@@ -276,15 +276,16 @@ async fn chzzk_get(url: String, cookie: Option<String>) -> Result<String, String
     Ok(body)
 }
 
-/// 치지직/게임 API에 JSON을 담아 PUT한다 (뱃지 장착 등 설정 변경용).
+/// 치지직/게임 API에 PUT한다 (뱃지 장착, 통나무 파워 수령 등).
 ///
+/// body가 없으면 본문 없이(Content-Length: 0) 보낸다 — 수령 요청이 그 형태다.
 /// comm-api는 브라우저가 보내는 부가 헤더(deviceid, front-client-*)를 함께
-///보아야 정상 처리하는 것으로 보여 같이 실어 준다.
+/// 보아야 정상 처리하는 것으로 보여 같이 실어 준다.
 #[tauri::command]
 async fn chzzk_put_json(
     url: String,
     cookie: Option<String>,
-    body: String,
+    body: Option<String>,
     device_id: Option<String>,
 ) -> Result<String, String> {
     let parsed: Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
@@ -300,12 +301,14 @@ async fn chzzk_put_json(
     let mut req = client
         .put(parsed)
         .header("Accept", "application/json, text/plain, */*")
-        .header("Content-Type", "application/json")
         .header("Origin", "https://chzzk.naver.com")
         .header("Referer", "https://chzzk.naver.com/")
         .header("front-client-platform-type", "PC")
-        .header("front-client-product-type", "web")
-        .body(body);
+        .header("front-client-product-type", "web");
+    req = match body {
+        Some(json) => req.header("Content-Type", "application/json").body(json),
+        None => req.header("Content-Length", "0"),
+    };
     if let Some(cookie) = cookie {
         req = req.header("Cookie", cookie);
     }
