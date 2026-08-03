@@ -119,30 +119,93 @@ function pickPower(content: any): number | null {
   return null;
 }
 
-/** 채팅방에서 본 유저의 프로필 카드 (뱃지·구독 개월 등) */
-export async function getProfileCard(
+export interface ChzzkBadge {
+  badgeId: string;
+  imageUrl: string | null;
+  title: string;
+  /** 지금 이 채널에서 달고 있는 뱃지인지 */
+  activated: boolean;
+}
+
+/**
+ * 이 채널에서 내가 쓸 수 있는 뱃지 목록.
+ *
+ * 치지직 웹이 ⭐ 팝업을 열 때 부르는 프로필 카드 조회를 그대로 쓴다.
+ * 응답의 필드 이름을 문서로 확인할 수 없어, badgeId를 가진 객체를
+ * 응답 전체에서 훑어 모은다 (수령 ID를 찾던 것과 같은 방식).
+ */
+export async function getMyBadges(
   chatChannelId: string,
   userIdHash: string,
-): Promise<unknown | null> {
-  if (!cookieHeader()) return null;
-  return getContent<unknown>(
+): Promise<ChzzkBadge[]> {
+  if (!cookieHeader()) return [];
+  const card = await getContent<unknown>(
     `${COMM_BASE}/v1/chats/${chatChannelId}/users/${userIdHash}/profile-card?chatType=STREAMING`,
   ).catch(() => null);
+  const found = new Map<string, ChzzkBadge>();
+  collectBadges(card, "", found);
+  return [...found.values()];
+}
+
+function pickString(o: Record<string, unknown>, re: RegExp): string | null {
+  for (const [k, v] of Object.entries(o)) {
+    if (typeof v === "string" && v && re.test(k)) return v;
+  }
+  return null;
+}
+
+function collectBadges(
+  value: unknown,
+  key: string,
+  out: Map<string, ChzzkBadge>,
+): void {
+  if (Array.isArray(value)) {
+    for (const v of value) collectBadges(v, key, out);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  const o = value as Record<string, unknown>;
+
+  if (typeof o.badgeId === "string" && o.badgeId) {
+    const prev = out.get(o.badgeId);
+    // 담겨 있던 자리 이름이나 객체 안의 참/거짓으로 장착 여부를 본다
+    const activated =
+      /activat|selected/i.test(key) ||
+      Object.entries(o).some(
+        ([k, v]) => v === true && /activat|selected|used/i.test(k),
+      );
+    out.set(o.badgeId, {
+      badgeId: o.badgeId,
+      imageUrl: pickString(o, /image|url/i) ?? prev?.imageUrl ?? null,
+      title: pickString(o, /title|name|desc/i) ?? prev?.title ?? o.badgeId,
+      activated: activated || prev?.activated || false,
+    });
+  }
+  for (const [k, v] of Object.entries(o)) collectBadges(v, k, out);
 }
 
 /**
  * 뱃지 장착. 치지직 웹의 ⭐ 버튼이 보내는 것과 같은 요청이다.
+ * badgeIds를 비우면 뱃지 없이 표시된다.
  *
- * 본문 형태를 아직 확인하지 못해 호출부가 그대로 넘기도록 열어 두었다.
- * (comm-api는 deviceid / front-client-* 헤더까지 봐야 정상 처리한다)
+ * comm-api는 쿠키 외에 deviceid / front-client-* 헤더까지 봐야 처리한다.
  */
-export async function activateBadges(body: unknown): Promise<string> {
+export async function activateBadges(
+  chatChannelId: string,
+  channelId: string,
+  badgeIds: string[],
+): Promise<void> {
   const cookie = cookieHeader();
   if (!cookie) throw new Error("네이버 로그인이 필요합니다.");
-  return invoke<string>("chzzk_put_json", {
+  await invoke<string>("chzzk_put_json", {
     url: `${COMM_BASE}/v2/user/badges/activate`,
     cookie,
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      badges: badgeIds.map((badgeId) => ({ badgeId })),
+      chatChannelId,
+      scopeId: channelId,
+      scopeType: "streaming",
+    }),
     deviceId: getDeviceUuid(),
   });
 }

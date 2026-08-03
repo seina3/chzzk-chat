@@ -29,6 +29,8 @@ export interface PaneCallbacks {
   onDock(channelId: string): void;
   /** 통나무 파워를 지금 다시 확인 */
   onRefreshLogPower(channelId: string): void;
+  /** 뱃지 고르기 창 열기 */
+  onPickBadge(channelId: string): void;
 }
 
 /**
@@ -107,6 +109,10 @@ export class ChannelPane {
     this.powerBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       cb.onRefreshLogPower(channelId);
+    });
+    pick<HTMLButtonElement>("pane-badge").addEventListener("click", (e) => {
+      e.stopPropagation();
+      cb.onPickBadge(channelId);
     });
     this.streamerBtn.addEventListener("click", (e) => {
       e.stopPropagation();

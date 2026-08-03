@@ -100,6 +100,7 @@
             <span class="pane-power-value">–</span>
           </button>
           <input class="pane-text-input" disabled autocomplete="off" spellcheck="false" />
+          <button class="pane-badge" title="닉네임 옆에 달 뱃지 고르기">☆</button>
           <button class="pane-send" disabled>채팅</button>
         </div>
       </section>
@@ -182,6 +183,21 @@
       </div>
       <div class="login-row">
         <button id="pane-style-reset">기본값으로</button>
+      </div>
+    </dialog>
+
+    <dialog id="badge-modal">
+      <div class="modal-header">
+        <h2 id="badge-title">뱃지 고르기</h2>
+        <button id="badge-close">×</button>
+      </div>
+      <p class="settings-help">
+        이 채널에서 내 닉네임 옆에 보일 뱃지를 고릅니다.
+        치지직에 저장되는 설정이라 다른 사람 화면에도 그대로 보입니다.
+      </p>
+      <div id="badge-list" class="badge-grid"></div>
+      <div class="login-row">
+        <button id="badge-clear">뱃지 없이 표시</button>
       </div>
     </dialog>
 

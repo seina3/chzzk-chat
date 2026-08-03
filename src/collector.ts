@@ -68,6 +68,16 @@ export class ChatCollector {
     return this.statuses.get(channelId) ?? "idle";
   }
 
+  /** 지금 붙어 있는 채팅방 ID (뱃지 장착 등에 필요) */
+  getChatChannelId(channelId: string): string | null {
+    return this.chatChannelIds.get(channelId) ?? null;
+  }
+
+  /** 로그인한 내 userIdHash */
+  getMyUid(): string | null {
+    return this.uid;
+  }
+
   /** 마지막으로 확인한 통나무 파워 (아직 모르면 null) */
   getLogPower(channelId: string): number | null {
     return this.logPowers.get(channelId) ?? null;

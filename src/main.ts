@@ -6,7 +6,14 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
-import { getChannelInfo, getUserStatus, parseChannelInput } from "./chzzk/api";
+import {
+  activateBadges,
+  getChannelInfo,
+  getMyBadges,
+  getUserStatus,
+  parseChannelInput,
+  type ChzzkBadge,
+} from "./chzzk/api";
 import { ChatCollector } from "./collector";
 import {
   getChannelLastActivity,
@@ -585,6 +592,7 @@ const paneCallbacks = {
   onOpenLive: (id: string) => openChannelPage(id),
   onDock: (id: string) => void dockPane(id),
   onRefreshLogPower: (id: string) => void refreshLogPower(id),
+  onPickBadge: (id: string) => void openBadgePicker(id),
 };
 
 /** 통나무 파워를 지금 다시 읽어 온다 (버튼을 눌렀을 때) */
@@ -1025,6 +1033,96 @@ function applyAuthChange(message: string): void {
     .reauth()
     .then(() => renderAllPaneStatus())
     .catch((e) => notify(`재접속 실패: ${e}`));
+}
+
+// ---------- 뱃지 고르기 ----------
+
+let badgeChannelId: string | null = null;
+
+/**
+ * 이 채널에서 달 뱃지를 고른다.
+ * 목록은 치지직의 프로필 카드에서 읽고, 고르면 웹의 ⭐ 버튼과 같은
+ * 요청을 보내 저장한다 — 다른 사람 화면에도 그대로 반영된다.
+ */
+async function openBadgePicker(channelId: string): Promise<void> {
+  const dialog = document.getElementById("badge-modal") as HTMLDialogElement;
+  const listEl = document.getElementById("badge-list")!;
+  const chatChannelId = collector.getChatChannelId(channelId);
+  const uid = collector.getMyUid();
+
+  if (!hasAuth() || !uid) {
+    notify("뱃지를 바꾸려면 네이버 로그인이 필요합니다.");
+    return;
+  }
+  if (!chatChannelId) {
+    notify("방송이 켜져 채팅에 연결된 뒤에 뱃지를 바꿀 수 있습니다.");
+    return;
+  }
+
+  badgeChannelId = channelId;
+  document.getElementById("badge-title")!.textContent =
+    `${channelName(channelId)} — 뱃지 고르기`;
+  listEl.innerHTML = `<div class="history-empty">불러오는 중…</div>`;
+  dialog.showModal();
+
+  const badges = await getMyBadges(chatChannelId, uid).catch(() => []);
+  if (badgeChannelId !== channelId) return;
+  renderBadges(badges);
+}
+
+function renderBadges(badges: ChzzkBadge[]): void {
+  const listEl = document.getElementById("badge-list")!;
+  if (badges.length === 0) {
+    listEl.innerHTML =
+      `<div class="history-empty">이 채널에서 쓸 수 있는 뱃지가 없습니다.</div>`;
+    return;
+  }
+  listEl.innerHTML = badges
+    .map(
+      (b) =>
+        `<button class="badge-choice${b.activated ? " active" : ""}" data-badge="${escapeHtml(b.badgeId)}" title="${escapeHtml(b.badgeId)}">` +
+        (b.imageUrl
+          ? `<img src="${escapeHtml(b.imageUrl)}" alt="" loading="lazy">`
+          : `<span class="badge-noimg">?</span>`) +
+        `<span class="badge-choice-name">${escapeHtml(b.title)}</span>` +
+        `</button>`,
+    )
+    .join("");
+}
+
+function initBadgeModal(): void {
+  const dialog = document.getElementById("badge-modal") as HTMLDialogElement;
+  document
+    .getElementById("badge-close")!
+    .addEventListener("click", () => dialog.close());
+
+  const apply = async (badgeIds: string[]) => {
+    const channelId = badgeChannelId;
+    const chatChannelId = channelId
+      ? collector.getChatChannelId(channelId)
+      : null;
+    if (!channelId || !chatChannelId) return;
+    dialog.close();
+    try {
+      await activateBadges(chatChannelId, channelId, badgeIds);
+      notify(
+        badgeIds.length > 0
+          ? "뱃지를 바꿨습니다. 다음 채팅부터 적용됩니다."
+          : "뱃지를 떼었습니다.",
+      );
+    } catch (e) {
+      notify(`뱃지 변경 실패: ${e}`);
+    }
+  };
+
+  document.getElementById("badge-list")!.addEventListener("click", (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>("[data-badge]")
+      ?.dataset.badge;
+    if (id) void apply([id]);
+  });
+  document
+    .getElementById("badge-clear")!
+    .addEventListener("click", () => void apply([]));
 }
 
 // ---------- 창 배치 ----------
@@ -1637,6 +1735,7 @@ async function main(): Promise<void> {
   initPaneDrop();
   initPaneReorder();
   initPaneLayout();
+  initBadgeModal();
   initUserMenu();
   initNoteDialog();
   initHighlightDialog();
