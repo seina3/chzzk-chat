@@ -42,8 +42,8 @@ export interface SavedChannel {
   imageUrl: string | null;
   /** 사용자가 지정한 별명 — 있으면 이 이름으로 표시한다 */
   alias?: string;
-  /** 마지막으로 방송 중인 것을 확인한 시각(ms) — "최근 방송순" 정렬용 */
-  lastLiveAt?: number;
+  /** 마지막으로 확인한 방송의 시작 시각(ms) — "최신순" 정렬용 */
+  lastOpenAt?: number;
 }
 
 /** 화면에 표시할 이름 (별명이 있으면 별명) */
@@ -51,25 +51,45 @@ export function displayName(ch: SavedChannel): string {
   return ch.alias?.trim() || ch.name;
 }
 
+/** "최신순" 정렬에 필요한, 저장된 값 밖의 정보 */
+export interface ChannelSortHints {
+  /** 지금 방송 중인지 */
+  isLive(channelId: string): boolean;
+  /** 방송 기록이 없을 때 대신 쓸 마지막 활동 시각(ms) */
+  lastActivity(channelId: string): number;
+}
+
 /**
  * 설정한 방식으로 채널 목록을 정렬한다.
- * manual은 저장된 순서 그대로(드래그로 바꾼 순서).
+ * manual은 저장된 순서 그대로(드래그·우클릭 메뉴로 바꾼 순서).
+ * recent는 방송 중인 채널을 위로 올리고, 그다음 방송을 켠 시각 순으로 늘어놓는다.
  */
 export function sortChannels(
   channels: SavedChannel[],
   order: ChannelOrder,
+  hints?: ChannelSortHints,
 ): SavedChannel[] {
   if (order === "manual") return channels;
   const list = [...channels];
+  const byName = (a: SavedChannel, b: SavedChannel) =>
+    displayName(a).localeCompare(displayName(b), "ko");
+
   if (order === "name") {
-    list.sort((a, b) => displayName(a).localeCompare(displayName(b), "ko"));
-  } else {
-    // 최근 방송순 — 방송 기록이 없는 채널은 뒤로 보내고 이름순으로
-    list.sort((a, b) => {
-      const d = (b.lastLiveAt ?? 0) - (a.lastLiveAt ?? 0);
-      return d !== 0 ? d : displayName(a).localeCompare(displayName(b), "ko");
-    });
+    list.sort(byName);
+    return list;
   }
+
+  // 방송을 켠 시각을 모르면 채팅이 마지막으로 들어온 시각으로 대신한다
+  const startedAt = (ch: SavedChannel) =>
+    ch.lastOpenAt ?? hints?.lastActivity(ch.channelId) ?? 0;
+
+  list.sort((a, b) => {
+    const liveA = hints?.isLive(a.channelId) ? 1 : 0;
+    const liveB = hints?.isLive(b.channelId) ? 1 : 0;
+    if (liveA !== liveB) return liveB - liveA;
+    const d = startedAt(b) - startedAt(a);
+    return d !== 0 ? d : byName(a, b);
+  });
   return list;
 }
 

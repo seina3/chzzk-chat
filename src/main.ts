@@ -9,6 +9,7 @@ import {
 import { getChannelInfo, getUserStatus, parseChannelInput } from "./chzzk/api";
 import { ChatCollector } from "./collector";
 import {
+  getChannelLastActivity,
   getRecentMessages,
   initDb,
   markMessageBlinded,
@@ -43,9 +44,11 @@ const userModal = new UserHistoryModal();
 const searchModal = new GlobalSearchModal((uid, nick) => {
   void userModal.open(uid, nick);
 });
-const donationsModal = new DonationsModal((uid, nick, donationsOnly) => {
-  void userModal.open(uid, nick, donationsOnly);
-});
+const donationsModal = new DonationsModal(
+  (uid, nick, donationsOnly, channelId) => {
+    void userModal.open(uid, nick, donationsOnly, channelId);
+  },
+);
 const chatView = new ChatView("chat-messages", "scroll-bottom", (uid, nick) => {
   void userModal.open(uid, nick);
 });
@@ -81,7 +84,7 @@ const collector = new ChatCollector({
     if (channelId === activeChannelId) dashboard.update(live);
     // 방송 회차·제목·카테고리 변화를 로그 파일에 반영
     noteLive(channelId, live);
-    if (live?.status === "OPEN") markChannelLive(channelId);
+    if (live?.status === "OPEN") markChannelLive(channelId, live.openDate);
     if (justStarted && live) {
       const name =
         channelName(channelId);
@@ -110,23 +113,37 @@ function notifyLiveStart(name: string, title: string): void {
 
 // ---------- 채널 목록 ----------
 
-/** 방송 중인 것을 확인한 시각을 남긴다 ("최근 방송순" 정렬용) */
-function markChannelLive(channelId: string): void {
+/** 방송 시작 시각을 남긴다 ("최신순" 정렬용) */
+function markChannelLive(channelId: string, openDate: string | null): void {
+  // openDate는 "YYYY-MM-DD HH:mm:ss" (KST)
+  const started = openDate ? new Date(openDate.replace(" ", "T")).getTime() : NaN;
+  const openAt = Number.isFinite(started) ? started : Date.now();
   const channels = getChannels();
   const ch = channels.find((c) => c.channelId === channelId);
-  if (!ch) return;
-  // 1분 단위로만 갱신해 localStorage 쓰기를 줄인다
-  const now = Date.now();
-  if (ch.lastLiveAt && now - ch.lastLiveAt < 60_000) return;
-  ch.lastLiveAt = now;
+  if (!ch || ch.lastOpenAt === openAt) return;
+  ch.lastOpenAt = openAt;
   saveChannels(channels);
+}
+
+/** 채널별 마지막 채팅 시각 — 방송 기록이 없는 채널의 "최신순" 대용 */
+let lastActivity = new Map<string, number>();
+
+async function loadLastActivity(): Promise<void> {
+  lastActivity = await getChannelLastActivity().catch(() => new Map());
+}
+
+function orderedChannels(): SavedChannel[] {
+  return sortChannels(getChannels(), getSettings().channelOrder, {
+    isLive: (id) => collector.isLive(id),
+    lastActivity: (id) => lastActivity.get(id) ?? 0,
+  });
 }
 
 function renderChannelList(): void {
   const listEl = document.getElementById("channel-list")!;
   const order = getSettings().channelOrder;
   listEl.innerHTML = "";
-  for (const ch of sortChannels(getChannels(), order)) {
+  for (const ch of orderedChannels()) {
     const li = document.createElement("li");
     li.className = ch.channelId === activeChannelId ? "channel active" : "channel";
     li.dataset.channelId = ch.channelId;
@@ -168,13 +185,26 @@ function renderChannelList(): void {
 /** 드래그 중인 채널 ID */
 let dragChannelId: string | null = null;
 
+function syncOrderButtons(): void {
+  const order = getSettings().channelOrder;
+  for (const btn of document.querySelectorAll<HTMLButtonElement>(
+    "#channel-order button",
+  )) {
+    btn.classList.toggle("active", btn.dataset.order === order);
+  }
+}
+
 function initChannelOrder(): void {
-  const select = document.getElementById("channel-order") as HTMLSelectElement;
-  select.value = getSettings().channelOrder;
-  select.addEventListener("change", () => {
-    saveSettings({ channelOrder: select.value as ChannelOrder });
-    renderChannelList();
-  });
+  for (const btn of document.querySelectorAll<HTMLButtonElement>(
+    "#channel-order button",
+  )) {
+    btn.addEventListener("click", () => {
+      saveSettings({ channelOrder: btn.dataset.order as ChannelOrder });
+      syncOrderButtons();
+      renderChannelList();
+    });
+  }
+  syncOrderButtons();
 
   const listEl = document.getElementById("channel-list")!;
 
@@ -236,6 +266,13 @@ function openChannelMenu(channelId: string, x: number, y: number): void {
   menu
     .querySelector<HTMLElement>('[data-action="reset-name"]')!
     .classList.toggle("hidden", !ch?.alias);
+  // 순서 옮기기는 직접정렬일 때만 의미가 있다
+  const manual = getSettings().channelOrder === "manual";
+  for (const action of ["move-up", "move-down"]) {
+    menu
+      .querySelector<HTMLElement>(`[data-action="${action}"]`)!
+      .classList.toggle("hidden", !manual);
+  }
 
   menu.classList.remove("hidden");
   // 화면 밖으로 나가지 않게 위치 보정
@@ -277,6 +314,12 @@ function initChannelMenu(): void {
       case "reset-name":
         setChannelAlias(channelId, "");
         break;
+      case "move-up":
+        moveChannel(channelId, -1);
+        break;
+      case "move-down":
+        moveChannel(channelId, 1);
+        break;
       case "remove":
         void removeChannel(channelId);
         break;
@@ -287,6 +330,18 @@ function initChannelMenu(): void {
     if (!menu.contains(e.target as Node)) closeChannelMenu();
   });
   window.addEventListener("blur", closeChannelMenu);
+}
+
+/** 우클릭 메뉴로 한 칸씩 옮기기 (드래그가 어려울 때의 대안) */
+function moveChannel(channelId: string, delta: number): void {
+  const channels = getChannels();
+  const from = channels.findIndex((c) => c.channelId === channelId);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= channels.length) return;
+  const [item] = channels.splice(from, 1);
+  channels.splice(to, 0, item);
+  saveChannels(channels);
+  renderChannelList();
 }
 
 function setChannelAlias(channelId: string, alias: string): void {
@@ -738,6 +793,7 @@ async function main(): Promise<void> {
   }).catch(() => "");
   await initDb(currentDbPath || undefined);
   await loadChannelNames();
+  await loadLastActivity();
   await initNotifications().catch(() => {});
   await refreshLoginNickname();
   initSettingsModal();

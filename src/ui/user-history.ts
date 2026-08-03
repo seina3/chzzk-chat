@@ -36,6 +36,8 @@ export class UserHistoryModal {
   private search = "";
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private donationsOnly = false;
+  /** 집계 창에서 채널을 골라 둔 상태로 열었다면 그 채널만 본다 */
+  private channelId: string | undefined;
   private stats: UserStats | null = null;
   private breakdown: UserChannelBreakdown[] = [];
 
@@ -74,14 +76,21 @@ export class UserHistoryModal {
     });
   }
 
-  /** donationsOnly로 열면 후원 내역 탭이 선택된 상태로 시작 */
+  /**
+   * donationsOnly로 열면 후원 내역 탭이 선택된 상태로 시작.
+   * channelId를 주면 그 채널에서의 기록만 보여준다 (집계 창의 채널 필터).
+   */
   async open(
     userIdHash: string,
     nickname: string,
     donationsOnly = false,
+    channelId?: string,
   ): Promise<void> {
     this.userIdHash = userIdHash;
-    this.titleEl.textContent = nickname;
+    this.channelId = channelId;
+    this.titleEl.textContent = channelId
+      ? `${nickname} — ${channelName(channelId)}`
+      : nickname;
     this.searchInput.value = "";
     this.search = "";
     this.donationsOnly = donationsOnly;
@@ -91,7 +100,7 @@ export class UserHistoryModal {
       : "메시지 내용 검색…";
     this.dialog.showModal();
 
-    this.stats = await getUserStats(userIdHash);
+    this.stats = await getUserStats(userIdHash, channelId);
     await this.loadBreakdown();
     this.renderStats();
     await this.reload();
@@ -99,6 +108,11 @@ export class UserHistoryModal {
 
   /** 채널별 분포 — 익명 후원처럼 사람을 구분할 수 없을 때 특히 유용 */
   private async loadBreakdown(): Promise<void> {
+    // 한 채널만 보는 중이면 분포를 보여줄 것이 없다
+    if (this.channelId) {
+      this.breakdown = [];
+      return;
+    }
     this.breakdown = await getUserChannelBreakdown(
       this.userIdHash,
       this.donationsOnly,
@@ -127,9 +141,14 @@ export class UserHistoryModal {
             .join("") +
           `</details>`
         : "";
-    const uid = anonymous
-      ? `<br><span class="uid">익명 후원은 보낸 사람을 구분할 수 없어 전체를 합쳐 보여줍니다.</span>`
-      : `<br><span class="uid">ID: ${escapeHtml(this.userIdHash)}</span>`;
+    const scope = this.channelId
+      ? `<br><span class="uid">${escapeHtml(channelName(this.channelId))} 채널에서의 기록만 보고 있습니다.</span>`
+      : "";
+    const uid =
+      scope +
+      (anonymous
+        ? `<br><span class="uid">익명 후원은 보낸 사람을 구분할 수 없어 전체를 합쳐 보여줍니다.</span>`
+        : `<br><span class="uid">ID: ${escapeHtml(this.userIdHash)}</span>`);
 
     const hidden =
       s.donationHidden > 0
@@ -202,6 +221,7 @@ export class UserHistoryModal {
       before: this.oldestLoaded,
       search: this.search || undefined,
       donationsOnly: this.donationsOnly,
+      channelId: this.channelId,
       limit: 100,
     });
     if (rows.length > 0) {

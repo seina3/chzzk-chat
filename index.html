@@ -13,12 +13,12 @@
           <input id="channel-input" placeholder="채널 URL 또는 ID" spellcheck="false" autocomplete="off" />
           <button id="add-channel">추가</button>
         </div>
-        <div class="sidebar-order">
-          <select id="channel-order" title="채널 목록 정렬">
-            <option value="manual">직접 정렬 (드래그)</option>
-            <option value="name">가나다순</option>
-            <option value="recent">최근 방송순</option>
-          </select>
+        <div class="sidebar-order" id="channel-order">
+          <button data-order="manual" title="드래그하거나 우클릭 메뉴로 순서를 바꿉니다">직접정렬</button>
+          <span class="sep">·</span>
+          <button data-order="recent" title="최근에 방송을 켠 순서">최신순</button>
+          <span class="sep">·</span>
+          <button data-order="name">가나다순</button>
         </div>
         <ul id="channel-list"></ul>
         <div class="sidebar-footer">
@@ -64,6 +64,8 @@
       <li data-action="copy">채널 링크 복사</li>
       <li data-action="rename">별명 바꾸기</li>
       <li data-action="reset-name">원래 이름으로</li>
+      <li data-action="move-up">위로 옮기기</li>
+      <li data-action="move-down">아래로 옮기기</li>
       <li class="danger" data-action="remove">목록에서 삭제</li>
     </ul>
 

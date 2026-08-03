@@ -52,11 +52,15 @@ export class DonationsModal {
   private tab: Tab = "user";
 
   constructor(
-    /** 후원 순위에서 누르면 후원 내역, 채팅 순위에서 누르면 채팅 내역을 연다 */
+    /**
+     * 후원 순위에서 누르면 후원 내역, 채팅 순위에서 누르면 채팅 내역을 연다.
+     * 채널을 걸러 둔 상태면 그 채널의 기록만 보여준다.
+     */
     private onUserClick: (
       userIdHash: string,
       nickname: string,
       donationsOnly: boolean,
+      channelId?: string,
     ) => void,
   ) {
     this.dialog = document.getElementById("donation-modal") as HTMLDialogElement;
@@ -106,6 +110,7 @@ export class DonationsModal {
           el.dataset.uid,
           el.dataset.nick ?? "",
           this.tab !== "chatter",
+          this.channelSel.value || undefined,
         );
       }
     });

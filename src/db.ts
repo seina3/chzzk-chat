@@ -186,6 +186,8 @@ export async function getUserMessages(
     limit?: number;
     /** 후원 메시지만 조회 */
     donationsOnly?: boolean;
+    /** 이 채널에서 보낸 것만 조회 */
+    channelId?: string;
   } = {},
 ): Promise<StoredMessage[]> {
   const limit = opts.limit ?? 100;
@@ -193,6 +195,10 @@ export async function getUserMessages(
   let where = "user_id_hash = $1";
   if (opts.donationsOnly) {
     where += " AND msg_type = 'donation'";
+  }
+  if (opts.channelId) {
+    params.push(opts.channelId);
+    where += ` AND channel_id = $${params.length}`;
   }
   if (opts.before !== undefined) {
     params.push(opts.before);
@@ -536,6 +542,14 @@ export async function getChannelsWithData(): Promise<string[]> {
   return rows.map((r) => r.channel_id);
 }
 
+/** 채널별 마지막 채팅 시각 — 방송 기록이 없을 때의 "최신순" 대용 */
+export async function getChannelLastActivity(): Promise<Map<string, number>> {
+  const rows = await requireDb().select<
+    { channel_id: string; last_time: number }[]
+  >(`SELECT channel_id, MAX(msg_time) AS last_time FROM messages GROUP BY channel_id`);
+  return new Map(rows.map((r) => [r.channel_id, r.last_time]));
+}
+
 /** 한 유저(또는 익명)의 채널별 분포 */
 export interface UserChannelBreakdown {
   channel_id: string;
@@ -620,8 +634,18 @@ export function markMessageBlinded(
     .catch((e) => console.error("블라인드 표시 실패:", e));
 }
 
-export async function getUserStats(userIdHash: string): Promise<UserStats> {
+/** channelId를 주면 그 채널에서의 기록만 집계한다 */
+export async function getUserStats(
+  userIdHash: string,
+  channelId?: string,
+): Promise<UserStats> {
   const d = requireDb();
+  const params: unknown[] = [userIdHash];
+  let where = "user_id_hash = $1";
+  if (channelId) {
+    params.push(channelId);
+    where += ` AND channel_id = $${params.length}`;
+  }
   const rows = await d.select<
     {
       cnt: number;
@@ -639,17 +663,17 @@ export async function getUserStats(userIdHash: string): Promise<UserStats> {
               AS donation_total,
             SUM(CASE WHEN msg_type = 'donation' THEN 1 ELSE 0 END) AS donation_count,
             SUM(CASE WHEN amount_hidden = 1 THEN 1 ELSE 0 END) AS donation_hidden
-     FROM messages WHERE user_id_hash = $1`,
-    [userIdHash],
+     FROM messages WHERE ${where}`,
+    params,
   );
   const nickRows = await d.select<NicknameUse[]>(
     `SELECT nickname,
             COUNT(*) AS cnt,
             MIN(msg_time) AS first_seen,
             MAX(msg_time) AS last_seen
-     FROM messages WHERE user_id_hash = $1
+     FROM messages WHERE ${where} AND nickname != ''
      GROUP BY nickname ORDER BY last_seen DESC LIMIT 50`,
-    [userIdHash],
+    params,
   );
   const r = rows[0];
   return {
