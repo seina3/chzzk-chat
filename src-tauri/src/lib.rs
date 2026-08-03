@@ -276,6 +276,53 @@ async fn chzzk_get(url: String, cookie: Option<String>) -> Result<String, String
     Ok(body)
 }
 
+/// 치지직/게임 API에 JSON을 담아 PUT한다 (뱃지 장착 등 설정 변경용).
+///
+/// comm-api는 브라우저가 보내는 부가 헤더(deviceid, front-client-*)를 함께
+///보아야 정상 처리하는 것으로 보여 같이 실어 준다.
+#[tauri::command]
+async fn chzzk_put_json(
+    url: String,
+    cookie: Option<String>,
+    body: String,
+    device_id: Option<String>,
+) -> Result<String, String> {
+    let parsed: Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    let host = parsed.host_str().unwrap_or_default();
+    if !matches!(host, "api.chzzk.naver.com" | "comm-api.game.naver.com") {
+        return Err(format!("허용되지 않은 호스트: {host}"));
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut req = client
+        .put(parsed)
+        .header("Accept", "application/json, text/plain, */*")
+        .header("Content-Type", "application/json")
+        .header("Origin", "https://chzzk.naver.com")
+        .header("Referer", "https://chzzk.naver.com/")
+        .header("front-client-platform-type", "PC")
+        .header("front-client-product-type", "web")
+        .body(body);
+    if let Some(cookie) = cookie {
+        req = req.header("Cookie", cookie);
+    }
+    if let Some(device_id) = device_id {
+        req = req.header("deviceid", device_id);
+    }
+
+    let res = req.send().await.map_err(|e| e.to_string())?;
+    let status = res.status().as_u16();
+    let text = res.text().await.map_err(|e| e.to_string())?;
+    if status >= 400 {
+        let snippet: String = text.chars().take(300).collect();
+        return Err(format!("HTTP {status}: {snippet}"));
+    }
+    Ok(text)
+}
+
 /// 로그 저장 기준 폴더: 사용자가 지정한 경로가 있으면 그 경로,
 /// 없으면 <앱 데이터>/logs
 fn resolve_log_base(
@@ -496,6 +543,7 @@ pub fn run() {
             naver_logout,
             append_chat_log,
             chzzk_get,
+            chzzk_put_json,
             get_default_log_dir,
             open_log_dir,
             open_url,

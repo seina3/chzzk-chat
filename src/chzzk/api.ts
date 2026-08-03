@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getSettings } from "../settings";
+import { getDeviceUuid, getSettings } from "../settings";
 import type { ChannelInfo, LiveInfo, UserStatus } from "./types";
 
 const API_BASE = "https://api.chzzk.naver.com";
@@ -117,6 +117,34 @@ function pickPower(content: any): number | null {
     if (nested !== null) return nested;
   }
   return null;
+}
+
+/** 채팅방에서 본 유저의 프로필 카드 (뱃지·구독 개월 등) */
+export async function getProfileCard(
+  chatChannelId: string,
+  userIdHash: string,
+): Promise<unknown | null> {
+  if (!cookieHeader()) return null;
+  return getContent<unknown>(
+    `${COMM_BASE}/v1/chats/${chatChannelId}/users/${userIdHash}/profile-card?chatType=STREAMING`,
+  ).catch(() => null);
+}
+
+/**
+ * 뱃지 장착. 치지직 웹의 ⭐ 버튼이 보내는 것과 같은 요청이다.
+ *
+ * 본문 형태를 아직 확인하지 못해 호출부가 그대로 넘기도록 열어 두었다.
+ * (comm-api는 deviceid / front-client-* 헤더까지 봐야 정상 처리한다)
+ */
+export async function activateBadges(body: unknown): Promise<string> {
+  const cookie = cookieHeader();
+  if (!cookie) throw new Error("네이버 로그인이 필요합니다.");
+  return invoke<string>("chzzk_put_json", {
+    url: `${COMM_BASE}/v2/user/badges/activate`,
+    cookie,
+    body: JSON.stringify(body),
+    deviceId: getDeviceUuid(),
+  });
 }
 
 /**
