@@ -690,6 +690,9 @@ function initChannelMenu(): void {
       case "popup":
         void openChannel(channelId, "popup");
         break;
+      case "stats":
+        donationsModal.open(channelId);
+        break;
       case "open":
         invoke("open_url", { url }).catch((err) =>
           notify(`채널을 열지 못했습니다: ${err}`),

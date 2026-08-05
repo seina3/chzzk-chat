@@ -116,7 +116,18 @@ export class DonationsModal {
     });
   }
 
-  open(): void {
+  /** channelId를 주면 그 채널만 걸러 연다 (채널 목록의 «집계 보기») */
+  open(channelId?: string): void {
+    if (channelId !== undefined) {
+      // 아직 목록에 없는 채널이라도 값이 남도록 미리 항목을 넣어 둔다
+      if (!this.channelSel.querySelector(`option[value="${channelId}"]`)) {
+        const opt = document.createElement("option");
+        opt.value = channelId;
+        opt.textContent = channelName(channelId);
+        this.channelSel.appendChild(opt);
+      }
+      this.channelSel.value = channelId;
+    }
     this.syncButtons();
     this.dialog.showModal();
     void this.fillChannels();
