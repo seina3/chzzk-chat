@@ -110,11 +110,11 @@ export class DonationsModal {
       }
       const el = target.closest<HTMLElement>("[data-uid]");
       if (el?.dataset.uid) {
+        // 구독·선물도 후원 내역 쪽에서 함께 보여준다
         this.onUserClick(
           el.dataset.uid,
           el.dataset.nick ?? "",
-          // 구독 알림은 후원 내역이 아니라 채팅 내역에 남아 있다
-          this.tab === "user" || this.tab === "channel",
+          this.tab !== "chatter",
           this.channelSel.value || undefined,
         );
       }
@@ -216,7 +216,7 @@ export class DonationsModal {
       const s = await getSubSummary(f);
       this.summaryEl.innerHTML =
         `<div class="donation-total sub-total">🎁 ${formatNumber(s.gifts)}</div>` +
-        `<div class="donation-sub">${label} · 선물 ${formatNumber(s.gifts)}건 · 구독 알림 ${formatNumber(s.count)}건 · ${formatNumber(s.users)}명</div>` +
+        `<div class="donation-sub">${label} · 선물한 구독권 ${formatNumber(s.gifts)}개 (${formatNumber(s.giftEvents)}번) · 구독 알림 ${formatNumber(s.count)}건 · ${formatNumber(s.users)}명</div>` +
         `<div class="chart-slot"></div>`;
     } else {
       const s = await getDonationSummary(f);

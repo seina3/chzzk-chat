@@ -45,6 +45,8 @@ export interface ChatMessage {
   modAction?: string | null;
   /** 제재 안내의 대상 닉네임 */
   targetNickname?: string | null;
+  /** 구독권 선물 안내라면 선물한 개수 (아니면 0) */
+  giftCount?: number;
 }
 
 export interface UserStatus {

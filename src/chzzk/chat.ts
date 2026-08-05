@@ -57,6 +57,21 @@ const MOD_ACTIONS: [RegExp, string][] = [
 ];
 
 /**
+ * "OOO 님이 팬 구독권 3개를 채널에 선물하였습니다" 꼴의 안내에서
+ * 선물한 개수를 뽑는다. 선물 안내가 아니면 0.
+ *
+ * 구독권 이름은 채널마다 다르고 티어마다도 달라("팬 구독권", "이웃집
+ * 깔냥이" …) 이름으로는 찾을 수 없다. 변하지 않는 것은 "선물"이라는
+ * 말과 "N개"라는 수량뿐이라 그 둘만 본다.
+ */
+function parseGiftCount(text: string): number {
+  if (!/선물/.test(text)) return 0;
+  const m = text.match(/(\d[\d,]*)\s*개/);
+  // 수량이 적히지 않는 문구도 있어, 선물이라면 최소 1개로 센다
+  return m ? Number(m[1].replace(/,/g, "")) || 1 : 1;
+}
+
+/**
  * "OOO님이 XXX님을 임시 제한 처리했습니다" 꼴의 안내에서
  * 처분 종류와 대상 닉네임을 뽑는다. 제재 안내가 아니면 둘 다 null.
  */
@@ -386,8 +401,11 @@ export class ChzzkChat {
       extras?.payType !== undefined ||
       extras?.donationUserWeeklyRank !== undefined;
 
+    // 구독자가 친 평범한 채팅에도 month 자리가 (null로) 딸려 오는 경우가 있어,
+    // 있고 없고가 아니라 실제 개월 수가 들어 있을 때만 구독 알림으로 본다.
+    const subMonth = typeof extras?.month === "number" ? extras.month : null;
     const isSubscription =
-      typeCode === MSG_TYPE.subscription || extras?.month !== undefined;
+      typeCode === MSG_TYPE.subscription || (subMonth !== null && subMonth > 0);
     const isDonation =
       !isSubscription &&
       (hasPay || donationFields) &&
@@ -409,12 +427,11 @@ export class ChzzkChat {
     let content = userMsg;
     if (isSubscription) {
       // 안내 문구(설명)가 없으면 개월 수로 직접 만든다
-      const month = extras?.month;
       const tier = extras?.tierName ? ` (${extras.tierName})` : "";
       const headline =
         desc ||
-        (month
-          ? `${nickname} 님이 ${month}개월 동안 구독 중이에요 🎉${tier}`
+        (subMonth
+          ? `${nickname} 님이 ${subMonth}개월 동안 구독 중이에요 🎉${tier}`
           : `${nickname} 님이 구독했어요 🎉${tier}`);
       const typed = userMsg.trim();
       content = typed && typed !== headline ? `${headline} — ${typed}` : headline;
@@ -462,6 +479,8 @@ export class ChzzkChat {
       blind,
       modAction,
       targetNickname,
+      // 일반 채팅에 "선물"·"3개" 같은 말이 섞여 오해받지 않도록 안내류만 본다
+      giftCount: type === "chat" ? 0 : parseGiftCount(content),
     };
   }
 

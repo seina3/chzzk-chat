@@ -27,6 +27,8 @@ export interface StoredMessage {
   mod_action: string | null;
   /** 제재 안내의 대상 닉네임 */
   target_nick: string | null;
+  /** 구독권 선물 안내라면 선물한 개수 */
+  gift_cnt: number | null;
 }
 
 /** 한 유저가 썼던 닉네임과 사용 기간 */
@@ -134,6 +136,8 @@ export async function initDb(dbPath?: string): Promise<void> {
     "sub_month INTEGER",
     "mod_action TEXT",
     "target_nick TEXT",
+    // 선물한 구독권 개수 — 안내 문구에서 뽑아 저장해 두고 합계에 쓴다
+    "gift_cnt INTEGER",
   ]) {
     await db
       .execute(`ALTER TABLE messages ADD COLUMN ${col}`)
@@ -166,6 +170,13 @@ function requireDb(): Database {
 }
 
 /**
+ * "후원 내역"에 함께 보여줄 것 — 치즈 후원과 구독·구독권 선물.
+ * 셋 다 채널에 돈이 오간 일이라 채팅 기록보다 이쪽에서 보는 편이 낫다.
+ * (금액 합계에는 여전히 치즈 후원만 들어간다)
+ */
+const DONATION_LIKE = `(msg_type = 'donation' OR msg_type = 'subscription' OR gift_cnt > 0)`;
+
+/**
  * 유저의 표시 이름을 고르는 서브쿼리 (바깥 쿼리가 messages를 m으로 별칭해야 한다).
  * 닉네임이 비어 있는 안내 메시지 행은 건너뛰고 가장 최근에 실제로 쓰인 이름을 쓴다 —
  * 익명의 후원자처럼 이름이 사라져 보이던 문제를 막는다.
@@ -185,8 +196,9 @@ export function saveMessage(m: ChatMessage): void {
       await db.execute(
         `INSERT OR IGNORE INTO messages
          (channel_id, user_id_hash, nickname, content, emojis, msg_type, pay_amount, msg_time,
-          blind, amount_hidden, role_code, sub_badge, sub_month, mod_action, target_nick)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          blind, amount_hidden, role_code, sub_badge, sub_month, mod_action, target_nick,
+          gift_cnt)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           m.channelId,
           m.userIdHash,
@@ -203,6 +215,7 @@ export function saveMessage(m: ChatMessage): void {
           m.subscriptionMonth,
           m.modAction ?? null,
           m.targetNickname ?? null,
+          m.giftCount || null,
         ],
       );
       // 이미 저장된 메시지가 가려진 상태로 다시 온 경우: 내용은 그대로 두고
@@ -248,7 +261,8 @@ export async function getUserMessages(
   const params: unknown[] = [userIdHash];
   let where = "user_id_hash = $1";
   if (opts.donationsOnly) {
-    where += " AND msg_type = 'donation'";
+    // 구독·구독권 선물도 후원 내역 쪽에서 함께 본다
+    where += ` AND ${DONATION_LIKE}`;
   }
   if (opts.channelId) {
     params.push(opts.channelId);
@@ -590,15 +604,15 @@ export async function getChatSummary(f: DonationFilter): Promise<ChatSummary> {
 // ---------- 구독 · 구독권 선물 ----------
 
 /**
- * 구독 알림 중 "선물"로 볼 것.
+ * 구독과 구독권 선물.
  *
- * 치지직이 보내 주는 안내 문구를 그대로 저장해 두었다가 여기서 가른다.
- * 선물 여부만 따로 오는 값이 없어 문구로 판단할 수밖에 없다.
+ * 선물은 종류가 따로 오지 않아 받을 때 안내 문구에서 개수를 뽑아
+ * gift_cnt에 넣어 둔다 (구독권 이름은 채널·티어마다 달라 쓸 수 없다).
+ * 선물 안내가 구독으로 오는지 후원·안내로 오는지도 일정하지 않아,
+ * 종류를 가리지 않고 gift_cnt가 있는 행을 선물로 본다.
  */
-const GIFT_MATCH = `content LIKE '%선물%'`;
-
 function subWhere(f: DonationFilter, params: unknown[]): string {
-  let where = "msg_type = 'subscription'";
+  let where = "(msg_type = 'subscription' OR gift_cnt > 0)";
   if (f.since > 0) {
     params.push(f.since);
     where += ` AND msg_time >= $${params.length}`;
@@ -611,10 +625,12 @@ function subWhere(f: DonationFilter, params: unknown[]): string {
 }
 
 export interface SubSummary {
-  /** 구독 알림 전체 건수 */
+  /** 구독 알림 건수 */
   count: number;
-  /** 그중 선물로 보이는 건수 */
+  /** 선물한 구독권 개수 합계 */
   gifts: number;
+  /** 선물 안내 건수 (한 번에 여러 개를 선물하기도 한다) */
+  giftEvents: number;
   /** 알림에 이름이 오른 사람 수 */
   users: number;
 }
@@ -623,16 +639,22 @@ export async function getSubSummary(f: DonationFilter): Promise<SubSummary> {
   const params: unknown[] = [];
   const where = subWhere(f, params);
   const rows = await requireDb().select<
-    { cnt: number; gifts: number; users: number }[]
+    { cnt: number; gifts: number; gift_events: number; users: number }[]
   >(
-    `SELECT COUNT(*) AS cnt,
-            SUM(CASE WHEN ${GIFT_MATCH} THEN 1 ELSE 0 END) AS gifts,
+    `SELECT SUM(CASE WHEN msg_type = 'subscription' THEN 1 ELSE 0 END) AS cnt,
+            COALESCE(SUM(gift_cnt), 0) AS gifts,
+            SUM(CASE WHEN gift_cnt > 0 THEN 1 ELSE 0 END) AS gift_events,
             COUNT(DISTINCT user_id_hash) AS users
      FROM messages WHERE ${where}`,
     params,
   );
   const r = rows[0];
-  return { count: r?.cnt ?? 0, gifts: r?.gifts ?? 0, users: r?.users ?? 0 };
+  return {
+    count: r?.cnt ?? 0,
+    gifts: r?.gifts ?? 0,
+    giftEvents: r?.gift_events ?? 0,
+    users: r?.users ?? 0,
+  };
 }
 
 export interface SubByUser {
@@ -654,8 +676,8 @@ export async function getSubsByUser(
   return requireDb().select<SubByUser[]>(
     `SELECT user_id_hash,
             ${LATEST_NICKNAME} AS nickname,
-            COUNT(*) AS cnt,
-            SUM(CASE WHEN ${GIFT_MATCH} THEN 1 ELSE 0 END) AS gift_cnt,
+            SUM(CASE WHEN msg_type = 'subscription' THEN 1 ELSE 0 END) AS cnt,
+            COALESCE(SUM(gift_cnt), 0) AS gift_cnt,
             MAX(msg_time) AS last_time
      FROM messages m WHERE ${where}
      GROUP BY user_id_hash
@@ -683,13 +705,13 @@ export async function getSubsByChannel(
   params.push(limit);
   return requireDb().select<SubByChannel[]>(
     `SELECT channel_id,
-            COUNT(*) AS cnt,
-            SUM(CASE WHEN ${GIFT_MATCH} THEN 1 ELSE 0 END) AS gift_cnt,
+            SUM(CASE WHEN msg_type = 'subscription' THEN 1 ELSE 0 END) AS cnt,
+            COALESCE(SUM(gift_cnt), 0) AS gift_cnt,
             COUNT(DISTINCT user_id_hash) AS users,
             MAX(msg_time) AS last_time
      FROM messages WHERE ${where}
      GROUP BY channel_id
-     ORDER BY cnt DESC
+     ORDER BY gift_cnt DESC, cnt DESC
      LIMIT $${params.length}`,
     params,
   );
@@ -917,7 +939,7 @@ export async function getUserChannelBreakdown(
   donationsOnly: boolean,
 ): Promise<UserChannelBreakdown[]> {
   const where = donationsOnly
-    ? "user_id_hash = $1 AND msg_type = 'donation'"
+    ? `user_id_hash = $1 AND ${DONATION_LIKE}`
     : "user_id_hash = $1";
   return requireDb().select<UserChannelBreakdown[]>(
     `SELECT channel_id,
@@ -951,7 +973,12 @@ export async function getTimeSeries(
   kind: SeriesKind,
 ): Promise<TimeBucket[]> {
   const params: unknown[] = [bucketMs];
-  let where = kind === "all" ? "1=1" : `msg_type = '${kind}'`;
+  let where =
+    kind === "all"
+      ? "1=1"
+      : kind === "subscription"
+        ? "(msg_type = 'subscription' OR gift_cnt > 0)"
+        : "msg_type = 'donation'";
   if (f.since > 0) {
     params.push(f.since);
     where += ` AND msg_time >= $${params.length}`;

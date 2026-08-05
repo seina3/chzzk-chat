@@ -356,6 +356,13 @@ export class UserHistoryModal {
     const action = row.mod_action
       ? `<span class="mod-action">${escapeHtml(row.mod_action)}</span>`
       : "";
+    // 구독·선물도 후원 내역에 함께 나오므로 한눈에 구분되게 표시한다
+    const gift =
+      row.gift_cnt && row.gift_cnt > 0
+        ? `<span class="gift-tag">🎁 구독권 ${formatNumber(row.gift_cnt)}개</span> `
+        : row.msg_type === "subscription"
+          ? `<span class="gift-tag">🎁 구독</span> `
+          : "";
     const cheese =
       row.msg_type !== "donation"
         ? ""
@@ -367,6 +374,7 @@ export class UserHistoryModal {
       channelTag +
       action +
       blindTagHtml(row.blind) +
+      gift +
       cheese +
       roleBadgeHtml(row.role_code) +
       `<span class="content">${renderContent(row.content, emojis)}</span>`;
