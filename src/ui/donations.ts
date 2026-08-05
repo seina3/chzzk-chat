@@ -132,13 +132,19 @@ export class DonationsModal {
     await resolveUnknownChannelNames(ids).catch(() => false);
 
     this.channelSel.innerHTML = `<option value="">전체 채널</option>`;
-    for (const id of ids) {
+    // 목록 순서가 아니라 이름순이라야 긴 목록에서 찾기 쉽다
+    const sorted = ids
+      .map((id) => ({
+        id,
+        label: registered.includes(id)
+          ? channelName(id)
+          : `${channelName(id)} (삭제됨)`,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "ko"));
+    for (const { id, label } of sorted) {
       const opt = document.createElement("option");
       opt.value = id;
-      const removed = !registered.includes(id);
-      opt.textContent = removed
-        ? `${channelName(id)} (삭제됨)`
-        : channelName(id);
+      opt.textContent = label;
       this.channelSel.appendChild(opt);
     }
     this.channelSel.value = current;
@@ -196,6 +202,9 @@ export class DonationsModal {
 
     if (this.tab === "user") {
       await this.loadUsers();
+    } else if (this.tab === "channel" && this.channelSel.value) {
+      // 채널을 눌러 들어왔으면 그 채널에 후원한 사람들을 보여준다
+      await this.loadUsers(true);
     } else if (this.tab === "channel") {
       await this.loadChannels();
     } else if (this.channelSel.value) {
@@ -259,9 +268,10 @@ export class DonationsModal {
     this.resultsEl.appendChild(el);
   }
 
-  private async loadUsers(): Promise<void> {
+  private async loadUsers(drilledIn = false): Promise<void> {
     const rows = await getDonationsByUser(this.filter());
-    if (this.tab !== "user") return;
+    if (this.tab !== (drilledIn ? "channel" : "user")) return;
+    if (drilledIn) this.backRow();
     if (rows.length === 0) {
       this.empty("해당 기간에 후원 기록이 없습니다.");
       return;
@@ -286,7 +296,7 @@ export class DonationsModal {
   /** 채널별 후원 순위 */
   private async loadChannels(): Promise<void> {
     const rows = await getDonationsByChannel(this.filter());
-    if (this.tab !== "channel") return;
+    if (this.tab !== "channel" || this.channelSel.value) return;
     if (rows.length === 0) {
       this.empty("해당 기간에 후원 기록이 없습니다.");
       return;
@@ -303,7 +313,10 @@ export class DonationsModal {
       rank += 1;
       const name = channelName(row.channel_id);
       const el = document.createElement("div");
-      el.className = "donation-user";
+      // 채팅 순위와 마찬가지로, 눌러서 누가 후원했는지 들여다본다
+      el.className = "donation-user clickable";
+      el.dataset.channel = row.channel_id;
+      el.title = "누르면 이 채널에 후원한 사람들을 봅니다";
       el.innerHTML =
         `<span class="rank">${rank}</span>` +
         `<span class="nick">${escapeHtml(name)}</span>` +
