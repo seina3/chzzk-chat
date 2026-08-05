@@ -99,6 +99,15 @@ export class ChatView {
     this.pinToBottom();
   }
 
+  /**
+   * 최신을 따라가는 중이었다면 다시 바닥에 붙인다.
+   * 다른 창에 가 있는 동안 쌓인 채팅 때문에 어정쩡한 자리에 서 있는 것을
+   * 바로잡는 용도라, 일부러 올려 둔 경우에는 건드리지 않는다.
+   */
+  restickToLatest(): void {
+    if (this.autoScroll) this.scrollToLatest();
+  }
+
   /** 잠깐 동안 바닥에 붙여 둔다 (뒤늦은 그림·레이아웃 변화 대비) */
   private pinToBottom(): void {
     if (this.pinTimer !== null) clearInterval(this.pinTimer);

@@ -1945,6 +1945,23 @@ function scrollPanesToLatest(): void {
   });
 }
 
+/**
+ * 다른 창에 갔다 돌아오면 그 사이 쌓인 채팅의 맨 아래로 다시 붙인다.
+ * 창이 가려져 있는 동안에는 화면 계산이 밀려 어중간한 자리에 서 있게 된다.
+ * 일부러 위로 올려 두고 나간 경우에는 그 자리를 지킨다.
+ */
+function initRefocusScroll(): void {
+  const restick = () => {
+    requestAnimationFrame(() => {
+      for (const pane of panes.values()) pane.restickToLatest();
+    });
+  };
+  window.addEventListener("focus", restick);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) restick();
+  });
+}
+
 function initPaneLayout(): void {
   for (const btn of document.querySelectorAll<HTMLButtonElement>(
     "#pane-layout button[data-layout]",
@@ -2590,6 +2607,7 @@ async function main(): Promise<void> {
   initPaneDrop();
   initPaneReorder();
   initPaneLayout();
+  initRefocusScroll();
   initBadgeModal();
   initPowerModal();
   initUserMenu();

@@ -234,6 +234,11 @@ export class ChannelPane {
     this.chat.scrollToLatest();
   }
 
+  /** 따라가는 중이었다면 다시 최신으로 (다른 창에 갔다 돌아왔을 때) */
+  restickToLatest(): void {
+    this.chat.restickToLatest();
+  }
+
   setStatus(text: string): void {
     this.statusEl.textContent = text;
   }
