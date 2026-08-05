@@ -25,6 +25,7 @@ export class ChatView {
   private container: HTMLElement;
   private scrollBtn: HTMLButtonElement;
   private autoScroll = true;
+  private pinTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     container: HTMLElement,
@@ -68,11 +69,18 @@ export class ChatView {
       this.scrollBtn.classList.toggle("hidden", nearBottom);
     });
 
-    this.scrollBtn.addEventListener("click", () => {
-      this.autoScroll = true;
-      this.scrollToBottom();
-      this.scrollBtn.classList.add("hidden");
-    });
+    // 이모티콘·뱃지 그림은 뜨기 전까지 자리를 차지하지 않는다. 맨 아래로
+    // 내린 뒤에 그림이 뜨면 그만큼 아래로 밀려나 다시 눌러야 했다.
+    // (load는 거품이 일지 않아 캡처 단계에서 받는다)
+    this.container.addEventListener(
+      "load",
+      () => {
+        if (this.autoScroll) this.scrollToBottom();
+      },
+      true,
+    );
+
+    this.scrollBtn.addEventListener("click", () => this.scrollToLatest());
   }
 
   clear(): void {
@@ -86,6 +94,23 @@ export class ChatView {
     this.autoScroll = true;
     this.scrollBtn.classList.add("hidden");
     this.scrollToBottom();
+    // 방금 드러난 자리의 그림이 뒤늦게 뜨며 높이가 자라는 동안에도
+    // 바닥에 붙어 있게 한다
+    this.pinToBottom();
+  }
+
+  /** 잠깐 동안 바닥에 붙여 둔다 (뒤늦은 그림·레이아웃 변화 대비) */
+  private pinToBottom(): void {
+    if (this.pinTimer !== null) clearInterval(this.pinTimer);
+    let left = 12;
+    this.pinTimer = setInterval(() => {
+      if (!this.autoScroll || left-- <= 0) {
+        if (this.pinTimer !== null) clearInterval(this.pinTimer);
+        this.pinTimer = null;
+        return;
+      }
+      this.scrollToBottom();
+    }, 50);
   }
 
   /**
