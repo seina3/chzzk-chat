@@ -200,9 +200,26 @@ function renderChannelList(): void {
 
   for (const folder of folders) {
     const items = inFolder.get(folder.id) ?? [];
-    listEl.appendChild(folderRow(folder, items.length));
-    if (folder.collapsed) continue;
-    for (const ch of items) listEl.appendChild(channelRow(ch, order, true));
+    // 머리글과 안에 든 채널을 한 덩어리로 묶어, 어디까지가 이 폴더인지
+    // 테두리 하나로 드러나게 한다
+    const group = document.createElement("li");
+    group.className = folder.collapsed
+      ? "folder-group collapsed"
+      : "folder-group";
+    group.appendChild(folderRow(folder, items.length));
+    if (!folder.collapsed) {
+      const sub = document.createElement("ul");
+      sub.className = "folder-items";
+      if (items.length === 0) {
+        const hint = document.createElement("li");
+        hint.className = "folder-empty";
+        hint.textContent = "채널을 끌어다 놓으세요";
+        sub.appendChild(hint);
+      }
+      for (const ch of items) sub.appendChild(channelRow(ch, order, true));
+      group.appendChild(sub);
+    }
+    listEl.appendChild(group);
   }
   for (const ch of loose) listEl.appendChild(channelRow(ch, order, false));
 
@@ -217,20 +234,23 @@ function renderChannelList(): void {
 }
 
 function folderRow(folder: ChannelFolder, count: number): HTMLElement {
-  const li = document.createElement("li");
-  li.className = folder.collapsed ? "folder collapsed" : "folder";
-  li.dataset.folderId = folder.id;
-  li.title = `${folder.name}\n눌러서 접거나 펴고, 채널을 끌어다 놓으면 이 폴더에 들어갑니다`;
-  li.innerHTML =
+  const row = document.createElement("div");
+  row.className = folder.collapsed ? "folder collapsed" : "folder";
+  row.dataset.folderId = folder.id;
+  row.draggable = true;
+  row.title =
+    `${folder.name}\n눌러서 접거나 펴고, 채널을 끌어다 놓으면 이 폴더에 들어갑니다` +
+    `\n머리글을 끌면 폴더 순서가 바뀝니다`;
+  row.innerHTML =
     `<span class="folder-arrow">${folder.collapsed ? "▸" : "▾"}</span>` +
     `<span class="folder-name">${escapeHtml(folder.name)}</span>` +
     `<span class="folder-count">${count}</span>`;
-  li.addEventListener("click", () => toggleFolder(folder.id));
-  li.addEventListener("contextmenu", (e) => {
+  row.addEventListener("click", () => toggleFolder(folder.id));
+  row.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     openFolderMenu(folder.id, e.clientX, e.clientY);
   });
-  return li;
+  return row;
 }
 
 function channelRow(
@@ -316,6 +336,18 @@ function removeFolder(folderId: string): void {
   const channels = getChannels();
   for (const ch of channels) if (ch.folderId === folderId) delete ch.folderId;
   saveChannels(channels);
+  renderChannelList();
+}
+
+/** 끌어 온 폴더를 놓은 폴더 자리에 끼운다 */
+function reorderFolders(movedId: string, ontoId: string): void {
+  const folders = [...getSettings().folders];
+  const from = folders.findIndex((f) => f.id === movedId);
+  const to = folders.findIndex((f) => f.id === ontoId);
+  if (from < 0 || to < 0 || from === to) return;
+  const [item] = folders.splice(from, 1);
+  folders.splice(to, 0, item);
+  saveSettings({ folders });
   renderChannelList();
 }
 
@@ -408,6 +440,8 @@ function initFolders(): void {
 
 /** 드래그 중인 채널 ID */
 let dragChannelId: string | null = null;
+/** 드래그 중인 폴더 ID (머리글을 잡고 끌 때) */
+let dragFolderId: string | null = null;
 
 function syncOrderButtons(): void {
   const order = getSettings().channelOrder;
@@ -433,12 +467,20 @@ function initChannelOrder(): void {
   const listEl = document.getElementById("channel-list")!;
 
   listEl.addEventListener("dragstart", (e) => {
-    const li = (e.target as HTMLElement).closest<HTMLElement>(".channel");
-    if (!li?.dataset.channelId) return;
-    dragChannelId = li.dataset.channelId;
-    li.classList.add("dragging");
+    const el = (e.target as HTMLElement).closest<HTMLElement>(
+      ".channel, .folder",
+    );
+    if (!el) return;
     // 끌고 있는 동안에만 "폴더 밖으로 빼기" 자리를 보여 준다
     listEl.classList.add("dragging");
+    el.classList.add("dragging");
+    if (el.dataset.folderId) {
+      dragFolderId = el.dataset.folderId;
+      e.dataTransfer?.setData("text/plain", dragFolderId);
+      return;
+    }
+    if (!el.dataset.channelId) return;
+    dragChannelId = el.dataset.channelId;
     e.dataTransfer?.setData("text/plain", dragChannelId);
   });
 
@@ -447,6 +489,7 @@ function initChannelOrder(): void {
 
   const clearDragState = () => {
     dragChannelId = null;
+    dragFolderId = null;
     listScroller.stop();
     listEl.classList.remove("dragging");
     for (const el of listEl.querySelectorAll(".drop-target, .dragging")) {
@@ -457,26 +500,35 @@ function initChannelOrder(): void {
   listEl.addEventListener("dragend", clearDragState);
 
   listEl.addEventListener("dragover", (e) => {
-    if (!dragChannelId) return;
+    if (!dragChannelId && !dragFolderId) return;
     e.preventDefault();
     listScroller.update(e);
-    // 채널 위면 그 자리에, 폴더 머리글이나 "밖으로 빼기" 위면 그 묶음으로
+    // 폴더를 끌 때는 다른 폴더 머리글에만 놓을 수 있다
     const over = (e.target as HTMLElement).closest<HTMLElement>(
-      ".channel, .folder, .folder-out",
+      dragFolderId ? ".folder" : ".channel, .folder, .folder-out",
     );
     for (const el of listEl.querySelectorAll(".drop-target")) {
       el.classList.remove("drop-target");
     }
-    over?.classList.add("drop-target");
+    if (over && over.dataset.folderId !== dragFolderId) {
+      over.classList.add("drop-target");
+    }
   });
 
   listEl.addEventListener("drop", (e) => {
     e.preventDefault();
     const moved = dragChannelId;
+    const movedFolder = dragFolderId;
     const over = (e.target as HTMLElement).closest<HTMLElement>(
       ".channel, .folder, .folder-out",
     );
     clearDragState();
+
+    if (movedFolder) {
+      const onto = over?.dataset.folderId;
+      if (onto && onto !== movedFolder) reorderFolders(movedFolder, onto);
+      return;
+    }
     if (!moved) {
       renderChannelList();
       return;
