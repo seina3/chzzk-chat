@@ -1493,27 +1493,14 @@ async function openBadgePicker(channelId: string): Promise<void> {
     card.followDate,
   );
   badgeList = card.badges;
-  for (const b of badgeList) if (b.activated) badgeOn.add(b.badgeId);
-  // 응답에서 장착 여부를 읽어내지 못하는 경우가 있다. 하나도 잡히지
-  // 않으면 이 앱에서 마지막으로 저장한 것을 대신 켜 둔다.
-  if (badgeOn.size === 0) {
-    const owned = new Set(badgeList.map((b) => b.badgeId));
-    for (const id of rememberedBadges(channelId)) {
-      if (owned.has(id) && badgeOn.size < BADGE_LIMIT) badgeOn.add(id);
-    }
+  // 지금 달려 있는 것을 붙는 차례(order)대로 켜 둔다 — 치지직이 알려주는
+  // 그대로라, 치지직 쪽에서 떼었으면 여기서도 떼어져 보인다
+  for (const b of [...badgeList]
+    .filter((b) => b.activated)
+    .sort((a, b) => (a.order ?? 99) - (b.order ?? 99))) {
+    badgeOn.add(b.badgeId);
   }
   renderBadges();
-}
-
-function rememberedBadges(channelId: string): string[] {
-  return getSettings().badgeChoices[channelId] ?? [];
-}
-
-function rememberBadges(channelId: string, badgeIds: string[]): void {
-  const all = { ...getSettings().badgeChoices };
-  if (badgeIds.length > 0) all[channelId] = badgeIds;
-  else delete all[channelId];
-  saveSettings({ badgeChoices: all });
 }
 
 /** 붙어 있는 연결 → 확인해 둔 값 → 상세 조회 순으로 채팅방 ID를 찾는다 */
@@ -1633,7 +1620,6 @@ async function saveBadges(): Promise<void> {
       const ids = [...badgeOn];
       stateEl.textContent = "저장 중…";
       await activateBadges(chatChannelId, channelId, ids);
-      rememberBadges(channelId, ids);
       stateEl.textContent =
         ids.length > 0
           ? "저장했습니다 · 다음 채팅부터 보입니다"

@@ -55,11 +55,6 @@ export interface Settings {
   paneStyles: Record<string, PaneStyle>;
   /** 직접 만들어 저장한 색 조합 */
   panePresets: PanePreset[];
-  /**
-   * 채널별로 마지막에 장착한 뱃지.
-   * 치지직 응답에서 장착 여부를 읽어내지 못할 때 대신 쓴다.
-   */
-  badgeChoices: Record<string, string[]>;
   /** 채널을 묶어 두는 폴더 (표시 순서대로) */
   folders: ChannelFolder[];
 }
@@ -87,7 +82,6 @@ const DEFAULT_SETTINGS: Settings = {
   paneLayout: "columns",
   paneStyles: {},
   panePresets: [],
-  badgeChoices: {},
   folders: [],
 };
 

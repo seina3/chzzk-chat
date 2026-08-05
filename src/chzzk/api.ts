@@ -179,6 +179,8 @@ export interface ChzzkBadge {
   title: string;
   /** 지금 이 채널에서 달고 있는 뱃지인지 */
   activated: boolean;
+  /** 달고 있다면 닉네임 옆에 몇 번째로 붙는지 (아니면 null) */
+  order: number | null;
 }
 
 export interface MyProfileCard {
@@ -206,14 +208,47 @@ export async function getMyProfileCard(
     `${COMM_BASE}/v1/chats/${chatChannelId}/users/${userIdHash}/profile-card?chatType=STREAMING`,
   ).catch(() => null);
   if (!card) return null;
-  const found = new Map<string, ChzzkBadge>();
-  collectBadges(card, "", found);
   return {
     nickname: findByKey(card, /^nickname$/i) ?? "",
     profileImageUrl: findByKey(card, /profileimage/i),
     followDate: findByKey(card, /followdate/i),
-    badges: [...found.values()],
+    badges: readViewerBadges(card) ?? scanForBadges(card),
   };
+}
+
+/**
+ * viewerBadges — 뱃지 목록의 정본.
+ *
+ *   { type, badgeNo, badge: { badgeId, imageUrl, title, ... },
+ *     order: 1, activatedV2: true }
+ *
+ * 지금 달고 있는지는 activatedV2가, 닉네임 옆에 붙는 차례는 order가
+ * 알려준다. 같은 응답의 activityBadges에도 activated가 있지만 그쪽은
+ * 갱신되지 않아 늘 false다 — 그걸 보면 안 된다.
+ */
+function readViewerBadges(content: any): ChzzkBadge[] | null {
+  const rows = content?.viewerBadges;
+  if (!Array.isArray(rows)) return null;
+  const badges: ChzzkBadge[] = [];
+  for (const row of rows) {
+    const b = row?.badge;
+    if (!b || typeof b.badgeId !== "string" || !b.badgeId) continue;
+    badges.push({
+      badgeId: b.badgeId,
+      imageUrl: b.imageUrl ?? null,
+      title: b.title || b.badgeId,
+      activated: row.activatedV2 === true,
+      order: typeof row.order === "number" ? row.order : null,
+    });
+  }
+  return badges;
+}
+
+/** viewerBadges가 없는 응답을 만났을 때의 대비책 */
+function scanForBadges(card: unknown): ChzzkBadge[] {
+  const found = new Map<string, ChzzkBadge>();
+  collectBadges(card, "", found);
+  return [...found.values()];
 }
 
 function pickString(o: Record<string, unknown>, re: RegExp): string | null {
@@ -277,6 +312,7 @@ function collectBadges(
       imageUrl: pickString(o, /image|url/i) ?? prev?.imageUrl ?? null,
       title: pickString(o, /title|name|desc/i) ?? prev?.title ?? o.badgeId,
       activated: activated || prev?.activated || false,
+      order: prev?.order ?? null,
     });
   }
   for (const [k, v] of Object.entries(o)) {
