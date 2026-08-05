@@ -22,6 +22,7 @@ import {
   getLogPowerHistory,
   getRecentMessages,
   initDb,
+  searchUsers,
   markMessageBlinded,
   recordLogPower,
   saveMessage,
@@ -2317,8 +2318,65 @@ function renderMarksList(): void {
   for (const el of rows) listEl.appendChild(el);
 }
 
+/** 32자리 유저 ID 해시 — 그대로 적어 넣은 경우 검색 없이 바로 연다 */
+const USER_ID_HASH = /^[0-9a-f]{32}$/i;
+
+/**
+ * 목록에 없는 유저에게도 표시를 달 수 있도록, 닉네임이나 유저 ID로 찾는다.
+ * 저장해 둔 채팅에서 찾으므로 한 번이라도 말한 적이 있으면 나온다.
+ */
+async function searchMarkTarget(query: string): Promise<void> {
+  const foundEl = document.getElementById("marks-found")!;
+  const q = query.trim();
+  foundEl.innerHTML = "";
+  if (!q) return;
+
+  // 유저 ID를 그대로 넣었다면 기록이 없어도 바로 달 수 있다
+  if (USER_ID_HASH.test(q)) {
+    openMarkTarget(q.toLowerCase(), knownNickname(q.toLowerCase()));
+    return;
+  }
+
+  foundEl.innerHTML = `<div class="history-empty">찾는 중…</div>`;
+  const rows = await searchUsers(q, 30).catch(() => []);
+  foundEl.innerHTML = "";
+  if (rows.length === 0) {
+    foundEl.innerHTML =
+      `<div class="history-empty">저장된 채팅에서 찾지 못했습니다. 유저 ID(32자리)를 알고 있다면 그대로 넣어 보세요.</div>`;
+    return;
+  }
+  for (const row of rows) {
+    const nick = row.nickname || knownNickname(row.user_id_hash) || "(이름 모름)";
+    const el = document.createElement("div");
+    el.className = "mark-row clickable";
+    el.title = "누르면 이 유저에게 표시를 답니다";
+    el.innerHTML =
+      `<span class="nick" style="color:${nickColor(row.user_id_hash)}">${escapeHtml(nick)}</span>` +
+      `<span class="mark-meta">채팅 ${formatNumber(row.cnt)}개 · 마지막 ${formatDateTime(row.last_seen)}</span>`;
+    el.addEventListener("click", () => openMarkTarget(row.user_id_hash, nick));
+    foundEl.appendChild(el);
+  }
+}
+
+/** 찾은 유저에게 지금 보고 있는 탭에 맞는 표시를 단다 */
+function openMarkTarget(uid: string, nick: string): void {
+  document.getElementById("marks-found")!.innerHTML = "";
+  (document.getElementById("marks-search") as HTMLInputElement).value = "";
+  if (marksTab === "highlight") {
+    openHighlightDialog(uid, nick);
+  } else if (marksTab === "block") {
+    // 채널을 고를 자리가 없으니 여기서는 모든 채널 차단만 한다
+    void block(uid, "", nick).then(() =>
+      notify(`${nick} 님을 모든 채널에서 차단했습니다.`),
+    );
+  } else {
+    openNoteDialog(uid, nick);
+  }
+}
+
 function initMarksModal(): void {
   const dialog = document.getElementById("marks-modal") as HTMLDialogElement;
+  const searchEl = document.getElementById("marks-search") as HTMLInputElement;
   document
     .getElementById("marks-close")!
     .addEventListener("click", () => dialog.close());
@@ -2327,11 +2385,21 @@ function initMarksModal(): void {
   )) {
     btn.addEventListener("click", () => {
       marksTab = btn.dataset.tab as MarksTab;
+      document.getElementById("marks-found")!.innerHTML = "";
       renderMarksList();
     });
   }
+
+  const search = () => void searchMarkTarget(searchEl.value);
+  document.getElementById("marks-search-btn")!.addEventListener("click", search);
+  searchEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") search();
+  });
+
   document.getElementById("open-marks")!.addEventListener("click", () => {
     (document.getElementById("settings-modal") as HTMLDialogElement).close();
+    searchEl.value = "";
+    document.getElementById("marks-found")!.innerHTML = "";
     renderMarksList();
     dialog.showModal();
   });
