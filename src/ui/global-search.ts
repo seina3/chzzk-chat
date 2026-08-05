@@ -96,7 +96,9 @@ export class GlobalSearchModal {
     const ids = [...new Set([...registered, ...withData])];
     await resolveUnknownChannelNames(ids).catch(() => false);
     this.channelSel.innerHTML = `<option value="">전체 채널</option>`;
-    for (const id of ids) {
+    for (const id of [...ids].sort((a, b) =>
+      channelName(a).localeCompare(channelName(b), "ko"),
+    )) {
       const opt = document.createElement("option");
       opt.value = id;
       opt.textContent = channelName(id);
@@ -110,8 +112,8 @@ export class GlobalSearchModal {
     this.tabUser.classList.toggle("active", mode === "user");
     this.tabChat.classList.toggle("active", mode === "chat");
     this.tabStreamer.classList.toggle("active", mode === "streamer");
-    // 스트리머 모아보기는 검색어가 없어도 목록이 나온다
-    this.channelSel.classList.toggle("hidden", mode !== "streamer");
+    // 채널별로 좁혀 보는 것은 채팅 검색·스트리머 모아보기 둘 다 쓸모가 있다
+    this.channelSel.classList.toggle("hidden", mode === "user");
     this.input.placeholder =
       mode === "user"
         ? "닉네임 또는 유저 ID 검색… (과거 닉네임 포함)"
@@ -176,7 +178,11 @@ export class GlobalSearchModal {
             before: this.oldestLoaded,
             limit: 100,
           })
-        : await searchMessages(q, { before: this.oldestLoaded, limit: 100 });
+        : await searchMessages(q, {
+            before: this.oldestLoaded,
+            limit: 100,
+            channelId: this.channelSel.value || undefined,
+          });
     if (this.query() !== q || this.mode !== mode) return;
     if (rows.length > 0) {
       this.oldestLoaded = rows[rows.length - 1].msg_time;

@@ -312,14 +312,21 @@ export async function searchUsers(
   );
 }
 
-/** 전체 저장 메시지에서 내용으로 검색. 최신순 페이지네이션 */
+/**
+ * 저장 메시지에서 내용으로 검색. 최신순 페이지네이션.
+ * channelId를 주면 그 채널에서 오간 것만 본다.
+ */
 export async function searchMessages(
   query: string,
-  opts: { before?: number; limit?: number } = {},
+  opts: { before?: number; limit?: number; channelId?: string } = {},
 ): Promise<StoredMessage[]> {
   const limit = opts.limit ?? 100;
   const params: unknown[] = [`%${query}%`];
   let where = "content LIKE $1";
+  if (opts.channelId) {
+    params.push(opts.channelId);
+    where += ` AND channel_id = $${params.length}`;
+  }
   if (opts.before !== undefined) {
     params.push(opts.before);
     where += ` AND msg_time < $${params.length}`;
