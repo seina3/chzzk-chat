@@ -47,13 +47,13 @@ export class ChannelPane {
   private sendBtn: HTMLButtonElement;
   private statusEl: HTMLElement;
   private liveEl: HTMLElement;
-  private streamerBtn: HTMLButtonElement;
+  private staffBtn: HTMLButtonElement;
   private dockBtn: HTMLButtonElement;
   private powerBtn: HTMLButtonElement;
   private powerValueEl: HTMLElement;
   private badgeImg: HTMLImageElement;
   private badgeNoImg: HTMLElement;
-  private streamerOnly = false;
+  private staffOnly = false;
 
   constructor(
     readonly channelId: string,
@@ -76,7 +76,7 @@ export class ChannelPane {
     this.sendBtn = pick<HTMLButtonElement>("pane-send");
     this.statusEl = pick("pane-status");
     this.liveEl = pick("pane-live");
-    this.streamerBtn = pick<HTMLButtonElement>("pane-streamer");
+    this.staffBtn = pick<HTMLButtonElement>("pane-staff");
     this.dockBtn = pick<HTMLButtonElement>("pane-dock");
     this.dockBtn.classList.toggle("hidden", !floating);
 
@@ -118,14 +118,14 @@ export class ChannelPane {
       e.stopPropagation();
       cb.onPickBadge(channelId);
     });
-    this.streamerBtn.addEventListener("click", (e) => {
+    this.staffBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      this.streamerOnly = !this.streamerOnly;
-      this.streamerBtn.classList.toggle("active", this.streamerOnly);
-      this.streamerBtn.title = this.streamerOnly
+      this.staffOnly = !this.staffOnly;
+      this.staffBtn.classList.toggle("active", this.staffOnly);
+      this.staffBtn.title = this.staffOnly
         ? "모든 채팅 보기"
-        : "스트리머 채팅만 보기";
-      this.chat.setStreamerOnly(this.streamerOnly);
+        : "관리자 보기 — 스트리머·매니저 채팅과 제재 기록만";
+      this.chat.setStaffOnly(this.staffOnly);
     });
 
     this.el.addEventListener("mousedown", () => cb.onFocus(channelId));

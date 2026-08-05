@@ -123,12 +123,13 @@ export class ChatView {
   }
 
   /**
-   * 스트리머가 친 채팅만 남겨 보기 (그리는 내용은 그대로, 화면에서만 거른다).
+   * 관리자 보기 — 스트리머·매니저가 친 채팅과 제재 기록만 남긴다
+   * (그리는 내용은 그대로, 화면에서만 거른다).
    * 켜든 끄든 보이는 줄이 확 달라져 보던 자리가 의미를 잃으므로,
    * 두 경우 모두 최신 채팅으로 내려 준다.
    */
-  setStreamerOnly(on: boolean): void {
-    this.container.classList.toggle("only-streamer", on);
+  setStaffOnly(on: boolean): void {
+    this.container.classList.toggle("only-staff", on);
     this.scrollToLatest();
   }
 
@@ -160,6 +161,8 @@ export class ChatView {
       payAmount: row.pay_amount,
       amountHidden: row.amount_hidden === 1,
       blind: (row.blind as ChatMessage["blind"]) ?? null,
+      modAction: row.mod_action,
+      targetNickname: row.target_nick,
       time: row.msg_time,
       type: type === "donation" || type === "subscription" || type === "system"
         ? type
@@ -189,7 +192,13 @@ export class ChatView {
 
     // 구독/시스템 알림은 닉네임이 문구에 이미 포함되어 있어 배너 형태로 표시
     if (m.type === "subscription" || m.type === "system") {
-      row.className = m.type === "subscription" ? "msg notice subscribe" : "msg notice";
+      // 제재 안내는 따로 표시해 둔다 (관리자 보기에서 남겨야 한다)
+      row.className =
+        m.type === "subscription"
+          ? "msg notice subscribe"
+          : m.modAction
+            ? "msg notice mod-notice"
+            : "msg notice";
       row.innerHTML =
         `<span class="time">${formatTime(m.time)}</span>` +
         `<span class="notice-icon">${m.type === "subscription" ? "🎖️" : "ℹ️"}</span>` +

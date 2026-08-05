@@ -907,7 +907,7 @@ button:disabled {
   color: var(--text);
 }
 
-.pane-tools .pane-streamer.active {
+.pane-tools .pane-staff.active {
   background: color-mix(in srgb, var(--streamer) 22%, transparent);
   color: var(--streamer);
 }
@@ -960,8 +960,15 @@ button:disabled {
   background: rgb(255 255 255 / 0.03);
 }
 
-/* 스트리머 채팅만 보기 */
-.pane-messages.only-streamer .msg:not(.role-streamer) {
+/* 관리자 보기 — 스트리머·매니저 채팅과 제재 기록만 남긴다 */
+.pane-messages.only-staff
+  .msg:not(.role-streamer):not(.role-manager):not(.mod-notice):not(.blinded) {
+  display: none;
+}
+
+/* 클린봇 자동 가림은 운영자가 한 조치가 아니라 빼 둔다 */
+.pane-messages.only-staff
+  .msg.blind-cleanbot:not(.role-streamer):not(.role-manager) {
   display: none;
 }
 
