@@ -1354,6 +1354,61 @@ async function openFolderPanes(folderId: string): Promise<void> {
 
 // ---------- 설정 모달 ----------
 
+interface AutostartState {
+  enabled: boolean;
+  minimized: boolean;
+}
+
+/**
+ * 컴퓨터를 켤 때 자동 실행.
+ * 켜 두면 운영체제의 시작 프로그램에 등록해 두고, 최소화 옵션을 함께
+ * 켜면 그때 붙는 인자로 창을 내린 채 뜬다 — 손으로 실행할 때는 그대로 열린다.
+ * 등록 여부는 운영체제에서 직접 읽어 오므로 다른 데서 지워도 그대로 보인다.
+ */
+function initAutostart(): void {
+  const onBox = document.getElementById("set-autostart") as HTMLInputElement;
+  const minBox = document.getElementById("set-autostart-min") as HTMLInputElement;
+
+  const show = (s: AutostartState) => {
+    onBox.checked = s.enabled;
+    minBox.checked = s.minimized;
+    minBox.disabled = !s.enabled;
+  };
+
+  const load = () =>
+    void invoke<AutostartState>("get_autostart")
+      .then(show)
+      .catch(() => {
+        onBox.disabled = true;
+        minBox.disabled = true;
+      });
+
+  const apply = () => {
+    minBox.disabled = !onBox.checked;
+    void invoke("set_autostart", {
+      enabled: onBox.checked,
+      minimized: minBox.checked,
+    })
+      .then(() =>
+        notify(
+          onBox.checked
+            ? minBox.checked
+              ? "컴퓨터를 켜면 최소화된 채로 자동 실행됩니다."
+              : "컴퓨터를 켜면 자동으로 실행됩니다."
+            : "자동 실행을 껐습니다.",
+        ),
+      )
+      .catch((e) => {
+        notify(`자동 실행 설정 실패: ${e}`);
+        load();
+      });
+  };
+
+  onBox.addEventListener("change", apply);
+  minBox.addEventListener("change", apply);
+  load();
+}
+
 function initSettingsModal(): void {
   const dialog = document.getElementById("settings-modal") as HTMLDialogElement;
   const autInput = document.getElementById("set-nid-aut") as HTMLInputElement;
@@ -1368,6 +1423,8 @@ function initSettingsModal(): void {
     saveSettings({ logTxt: logTxtInput.checked });
     resetSessions();
   });
+
+  initAutostart();
 
   // 로그 파일 형식 — 바꾸면 다음 기록부터 새 파일에 쌓인다
   const logFormatSel = document.getElementById("set-log-format") as HTMLSelectElement;
@@ -2264,6 +2321,13 @@ function renderMarksList(): void {
   )) {
     btn.classList.toggle("active", btn.dataset.tab === marksTab);
   }
+  // 찾아서 무엇을 다는지는 보고 있는 탭에 따라 다르다
+  (document.getElementById("marks-search") as HTMLInputElement).placeholder =
+    marksTab === "note"
+      ? "닉네임 또는 유저 ID로 찾아 메모 달기"
+      : marksTab === "highlight"
+        ? "닉네임 또는 유저 ID로 찾아 강조 색 입히기"
+        : "닉네임 또는 유저 ID로 찾아 모든 채널에서 차단";
 
   const rows: HTMLElement[] = [];
   if (marksTab === "block") {

@@ -1690,6 +1690,16 @@ dialog::backdrop {
   flex: 1;
 }
 
+/* 위 설정에 딸린 줄 — 한 칸 들여쓰고, 꺼져 있으면 흐리게 */
+.checkbox-row.sub {
+  margin-left: 23px;
+}
+
+.checkbox-row.sub:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .log-dir-row {
   display: flex;
   gap: 6px;

@@ -534,9 +534,104 @@ async fn naver_logout(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// ---------- 컴퓨터를 켤 때 자동 실행 ----------
+
+/// 자동 실행 등록 상태.
+#[derive(Serialize, Default)]
+struct AutostartState {
+    enabled: bool,
+    /// 자동 실행으로 켜졌을 때 최소화된 채로 시작할지
+    minimized: bool,
+}
+
+/// 자동 실행으로 켜졌을 때 붙는 인자. 손으로 실행하면 붙지 않으므로
+/// 그때는 평소대로 창이 열린다.
+const MINIMIZED_FLAG: &str = "--minimized";
+
+#[cfg(target_os = "windows")]
+const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+#[cfg(target_os = "windows")]
+const RUN_NAME: &str = "ChzzkChat";
+
+/// reg.exe를 콘솔 창 없이 실행한다.
+#[cfg(target_os = "windows")]
+fn reg(args: &[&str]) -> Result<std::process::Output, String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    std::process::Command::new("reg")
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| e.to_string())
+}
+
+/// 지금 등록되어 있는지, 최소화로 등록되어 있는지 확인한다.
+/// 설정 파일이 아니라 운영체제에 등록된 값을 그대로 읽으므로,
+/// 다른 데서 지웠어도 화면에 사실대로 보인다.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn get_autostart() -> Result<AutostartState, String> {
+    let out = reg(&["query", RUN_KEY, "/v", RUN_NAME])?;
+    if !out.status.success() {
+        return Ok(AutostartState::default());
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    Ok(AutostartState {
+        enabled: true,
+        minimized: text.contains(MINIMIZED_FLAG),
+    })
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn get_autostart() -> Result<AutostartState, String> {
+    Ok(AutostartState::default())
+}
+
+/// 자동 실행을 켜거나 끈다. minimized면 최소화된 채로 시작하도록 등록한다.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn set_autostart(enabled: bool, minimized: bool) -> Result<(), String> {
+    if !enabled {
+        // 등록된 적이 없어 지울 것이 없어도 오류로 보지 않는다
+        reg(&["delete", RUN_KEY, "/v", RUN_NAME, "/f"])?;
+        return Ok(());
+    }
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = exe.to_string_lossy().to_string();
+    let value = if minimized {
+        format!("\"{exe}\" {MINIMIZED_FLAG}")
+    } else {
+        format!("\"{exe}\"")
+    };
+    let out = reg(&[
+        "add", RUN_KEY, "/v", RUN_NAME, "/t", "REG_SZ", "/d", &value, "/f",
+    ])?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn set_autostart(enabled: bool, minimized: bool) -> Result<(), String> {
+    let _ = (enabled, minimized);
+    Err("이 운영체제에서는 아직 지원하지 않습니다.".into())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            // 자동 실행으로 켜진 경우에만 최소화한다
+            if std::env::args().any(|a| a == MINIMIZED_FLAG) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.minimize();
+                }
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
@@ -552,7 +647,9 @@ pub fn run() {
             open_url,
             get_default_db_path,
             prepare_db_dir,
-            open_dir
+            open_dir,
+            get_autostart,
+            set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
