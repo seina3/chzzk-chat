@@ -587,6 +587,114 @@ export async function getChatSummary(f: DonationFilter): Promise<ChatSummary> {
   return { total: rows[0]?.total ?? 0, chatters: rows[0]?.chatters ?? 0 };
 }
 
+// ---------- 구독 · 구독권 선물 ----------
+
+/**
+ * 구독 알림 중 "선물"로 볼 것.
+ *
+ * 치지직이 보내 주는 안내 문구를 그대로 저장해 두었다가 여기서 가른다.
+ * 선물 여부만 따로 오는 값이 없어 문구로 판단할 수밖에 없다.
+ */
+const GIFT_MATCH = `content LIKE '%선물%'`;
+
+function subWhere(f: DonationFilter, params: unknown[]): string {
+  let where = "msg_type = 'subscription'";
+  if (f.since > 0) {
+    params.push(f.since);
+    where += ` AND msg_time >= $${params.length}`;
+  }
+  if (f.channelId) {
+    params.push(f.channelId);
+    where += ` AND channel_id = $${params.length}`;
+  }
+  return where;
+}
+
+export interface SubSummary {
+  /** 구독 알림 전체 건수 */
+  count: number;
+  /** 그중 선물로 보이는 건수 */
+  gifts: number;
+  /** 알림에 이름이 오른 사람 수 */
+  users: number;
+}
+
+export async function getSubSummary(f: DonationFilter): Promise<SubSummary> {
+  const params: unknown[] = [];
+  const where = subWhere(f, params);
+  const rows = await requireDb().select<
+    { cnt: number; gifts: number; users: number }[]
+  >(
+    `SELECT COUNT(*) AS cnt,
+            SUM(CASE WHEN ${GIFT_MATCH} THEN 1 ELSE 0 END) AS gifts,
+            COUNT(DISTINCT user_id_hash) AS users
+     FROM messages WHERE ${where}`,
+    params,
+  );
+  const r = rows[0];
+  return { count: r?.cnt ?? 0, gifts: r?.gifts ?? 0, users: r?.users ?? 0 };
+}
+
+export interface SubByUser {
+  user_id_hash: string;
+  nickname: string;
+  cnt: number;
+  gift_cnt: number;
+  last_time: number;
+}
+
+/** 유저별 구독·선물 건수. 선물이 많은 순 */
+export async function getSubsByUser(
+  f: DonationFilter,
+  limit = 200,
+): Promise<SubByUser[]> {
+  const params: unknown[] = [];
+  const where = subWhere(f, params);
+  params.push(limit);
+  return requireDb().select<SubByUser[]>(
+    `SELECT user_id_hash,
+            ${LATEST_NICKNAME} AS nickname,
+            COUNT(*) AS cnt,
+            SUM(CASE WHEN ${GIFT_MATCH} THEN 1 ELSE 0 END) AS gift_cnt,
+            MAX(msg_time) AS last_time
+     FROM messages m WHERE ${where}
+     GROUP BY user_id_hash
+     ORDER BY gift_cnt DESC, cnt DESC
+     LIMIT $${params.length}`,
+    params,
+  );
+}
+
+export interface SubByChannel {
+  channel_id: string;
+  cnt: number;
+  gift_cnt: number;
+  users: number;
+  last_time: number;
+}
+
+/** 채널별 구독·선물 건수 */
+export async function getSubsByChannel(
+  f: DonationFilter,
+  limit = 100,
+): Promise<SubByChannel[]> {
+  const params: unknown[] = [];
+  const where = subWhere(f, params);
+  params.push(limit);
+  return requireDb().select<SubByChannel[]>(
+    `SELECT channel_id,
+            COUNT(*) AS cnt,
+            SUM(CASE WHEN ${GIFT_MATCH} THEN 1 ELSE 0 END) AS gift_cnt,
+            COUNT(DISTINCT user_id_hash) AS users,
+            MAX(msg_time) AS last_time
+     FROM messages WHERE ${where}
+     GROUP BY channel_id
+     ORDER BY cnt DESC
+     LIMIT $${params.length}`,
+    params,
+  );
+}
+
 /** 기록이 남아 있는 모든 채널 ID (목록에서 지운 채널도 포함) */
 export async function getChannelsWithData(): Promise<string[]> {
   const rows = await requireDb().select<{ channel_id: string }[]>(
@@ -830,17 +938,20 @@ export interface TimeBucket {
   total: number;
 }
 
+/** 그래프·집계에서 볼 종류 */
+export type SeriesKind = "donation" | "subscription" | "all";
+
 /**
- * 기간을 일정 간격으로 나눠 채팅 수와 후원 금액을 집계한다.
- * bucketMs 단위로 묶으며, donationsOnly면 후원만 센다.
+ * 기간을 일정 간격으로 나눠 건수와 후원 금액을 집계한다.
+ * bucketMs 단위로 묶으며, kind가 all이면 채팅 전체를 센다.
  */
 export async function getTimeSeries(
   f: DonationFilter,
   bucketMs: number,
-  donationsOnly: boolean,
+  kind: SeriesKind,
 ): Promise<TimeBucket[]> {
   const params: unknown[] = [bucketMs];
-  let where = donationsOnly ? "msg_type = 'donation'" : "1=1";
+  let where = kind === "all" ? "1=1" : `msg_type = '${kind}'`;
   if (f.since > 0) {
     params.push(f.since);
     where += ` AND msg_time >= $${params.length}`;

@@ -6,8 +6,12 @@ import {
   getDonationSummary,
   getDonationsByChannel,
   getDonationsByUser,
+  getSubSummary,
+  getSubsByChannel,
+  getSubsByUser,
   getTimeSeries,
   type DonationFilter,
+  type SeriesKind,
 } from "../db";
 import { renderChart } from "./chart";
 import { channelName, resolveUnknownChannelNames } from "../channel-names";
@@ -21,7 +25,7 @@ import {
 } from "./render";
 
 type Period = "1d" | "7d" | "30d" | "all";
-type Tab = "user" | "channel" | "chatter";
+type Tab = "user" | "channel" | "sub" | "chatter";
 
 const DAY_MS = 86_400_000;
 
@@ -109,7 +113,8 @@ export class DonationsModal {
         this.onUserClick(
           el.dataset.uid,
           el.dataset.nick ?? "",
-          this.tab !== "chatter",
+          // 구독 알림은 후원 내역이 아니라 채팅 내역에 남아 있다
+          this.tab === "user" || this.tab === "channel",
           this.channelSel.value || undefined,
         );
       }
@@ -200,12 +205,18 @@ export class DonationsModal {
       all: "전체 기간",
     }[this.period];
 
-    // 요약은 보고 있는 탭에 맞춰 후원 총액 또는 채팅 수를 보여준다
+    // 요약은 보고 있는 탭에 맞춰 후원 총액·구독 수·채팅 수를 보여준다
     if (this.tab === "chatter") {
       const c = await getChatSummary(f);
       this.summaryEl.innerHTML =
         `<div class="donation-total chat-total">💬 ${formatNumber(c.total)}</div>` +
         `<div class="donation-sub">${label} · 채팅 ${formatNumber(c.total)}개 · 참여자 ${formatNumber(c.chatters)}명</div>` +
+        `<div class="chart-slot"></div>`;
+    } else if (this.tab === "sub") {
+      const s = await getSubSummary(f);
+      this.summaryEl.innerHTML =
+        `<div class="donation-total sub-total">🎁 ${formatNumber(s.gifts)}</div>` +
+        `<div class="donation-sub">${label} · 선물 ${formatNumber(s.gifts)}건 · 구독 알림 ${formatNumber(s.count)}건 · ${formatNumber(s.users)}명</div>` +
         `<div class="chart-slot"></div>`;
     } else {
       const s = await getDonationSummary(f);
@@ -224,6 +235,10 @@ export class DonationsModal {
       await this.loadUsers(true);
     } else if (this.tab === "channel") {
       await this.loadChannels();
+    } else if (this.tab === "sub" && this.channelSel.value) {
+      await this.loadSubUsers();
+    } else if (this.tab === "sub") {
+      await this.loadSubChannels();
     } else if (this.channelSel.value) {
       // 채널이 정해져 있으면 곧바로 그 채널의 유저 순위
       await this.loadChatters();
@@ -245,11 +260,17 @@ export class DonationsModal {
   private async drawChart(f: DonationFilter): Promise<void> {
     const host = this.summaryEl.querySelector<HTMLElement>(".chart-slot");
     if (!host) return;
-    const donations = this.tab !== "chatter";
+    const kind: SeriesKind =
+      this.tab === "chatter"
+        ? "all"
+        : this.tab === "sub"
+          ? "subscription"
+          : "donation";
+    const donations = kind === "donation";
     const hourly = this.period === "1d";
     const bucketMs = hourly ? 3_600_000 : DAY_MS;
 
-    const rows = await getTimeSeries(f, bucketMs, donations);
+    const rows = await getTimeSeries(f, bucketMs, kind);
     if (rows.length === 0) return;
     // 전체 기간이면 가장 오래된 기록부터, 아니면 기간 시작부터
     const from = f.since > 0 ? f.since : rows[0].bucket * bucketMs;
@@ -263,8 +284,9 @@ export class DonationsModal {
       from,
       to: Date.now(),
       metric: donations ? "total" : "cnt",
-      color: donations ? "#ffc44d" : "#00e6a1",
-      unit: donations ? "🧀 " : "💬 ",
+      color:
+        kind === "donation" ? "#ffc44d" : kind === "subscription" ? "#b98cff" : "#00e6a1",
+      unit: kind === "donation" ? "🧀 " : kind === "subscription" ? "🎁 " : "💬 ",
       label: (t) => {
         const d = new Date(t);
         return hourly
@@ -339,6 +361,68 @@ export class DonationsModal {
         `<span class="nick">${escapeHtml(name)}</span>` +
         `<span class="donation-user-meta">${formatNumber(row.cnt)}회 · 후원자 ${formatNumber(row.donors)}명${hiddenNote(row.hidden_cnt)} · 마지막 ${formatDateTime(row.last_time)}</span>` +
         `<span class="donation-user-total ${donationTierClass(row.total)}">🧀 ${formatNumber(row.total)}</span>`;
+      this.resultsEl.appendChild(el);
+    }
+  }
+
+  /**
+   * 구독·선물.
+   * 치지직이 선물 여부를 따로 알려주지 않아, 안내 문구에 "선물"이 들어간
+   * 건을 선물로 센다.
+   */
+  private async loadSubChannels(): Promise<void> {
+    const rows = await getSubsByChannel(this.filter());
+    if (this.tab !== "sub" || this.channelSel.value) return;
+    if (rows.length === 0) {
+      this.empty("해당 기간에 구독 기록이 없습니다.");
+      return;
+    }
+    void resolveUnknownChannelNames(rows.map((r) => r.channel_id)).then(
+      (changed) => {
+        if (changed && this.tab === "sub" && !this.channelSel.value) {
+          void this.reload();
+        }
+      },
+    );
+
+    let rank = 0;
+    for (const row of rows) {
+      rank += 1;
+      const el = document.createElement("div");
+      el.className = "donation-user clickable";
+      el.dataset.channel = row.channel_id;
+      el.title = "누르면 이 채널의 구독·선물 순위를 봅니다";
+      el.innerHTML =
+        `<span class="rank">${rank}</span>` +
+        `<span class="nick">${escapeHtml(channelName(row.channel_id))}</span>` +
+        `<span class="donation-user-meta">구독 알림 ${formatNumber(row.cnt)}건 · ${formatNumber(row.users)}명 · 마지막 ${formatDateTime(row.last_time)}</span>` +
+        `<span class="donation-user-total sub-count">🎁 ${formatNumber(row.gift_cnt)}</span>`;
+      this.resultsEl.appendChild(el);
+    }
+  }
+
+  /** 유저별 구독·선물 순위 (선물 많은 순) */
+  private async loadSubUsers(): Promise<void> {
+    const rows = await getSubsByUser(this.filter());
+    if (this.tab !== "sub") return;
+    if (this.channelSel.value) this.backRow();
+    if (rows.length === 0) {
+      this.empty("해당 기간에 구독 기록이 없습니다.");
+      return;
+    }
+    let rank = 0;
+    for (const row of rows) {
+      rank += 1;
+      const nick = displayNick(row.user_id_hash, row.nickname);
+      const el = document.createElement("div");
+      el.className = "donation-user";
+      el.dataset.uid = row.user_id_hash;
+      el.dataset.nick = nick;
+      el.innerHTML =
+        `<span class="rank">${rank}</span>` +
+        `<span class="nick" style="color:${nickColor(row.user_id_hash)}">${escapeHtml(nick)}</span>` +
+        `<span class="donation-user-meta">구독 알림 ${formatNumber(row.cnt)}건 · 마지막 ${formatDateTime(row.last_time)}</span>` +
+        `<span class="donation-user-total sub-count">🎁 ${formatNumber(row.gift_cnt)}</span>`;
       this.resultsEl.appendChild(el);
     }
   }
