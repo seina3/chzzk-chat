@@ -116,9 +116,13 @@ export class DonationsModal {
     });
   }
 
-  /** channelId를 주면 그 채널만 걸러 연다 (채널 목록의 «집계 보기») */
+  /**
+   * channelId를 주면 그 채널만 걸러 연다 (채널 목록의 «집계 보기»).
+   * 주지 않으면 늘 전체 채널로 시작한다 — 지난번 필터가 남아 있으면
+   * 왜 기록이 적은지 알아채기 어렵다.
+   */
   open(channelId?: string): void {
-    if (channelId !== undefined) {
+    if (channelId) {
       // 아직 목록에 없는 채널이라도 값이 남도록 미리 항목을 넣어 둔다
       if (!this.channelSel.querySelector(`option[value="${channelId}"]`)) {
         const opt = document.createElement("option");
@@ -127,6 +131,8 @@ export class DonationsModal {
         this.channelSel.appendChild(opt);
       }
       this.channelSel.value = channelId;
+    } else {
+      this.channelSel.value = "";
     }
     this.syncButtons();
     this.dialog.showModal();
