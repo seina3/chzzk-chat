@@ -1,4 +1,4 @@
-import type { ChatMessage } from "../chzzk/types";
+import type { BlindType, ChatMessage } from "../chzzk/types";
 import type { StoredMessage } from "../db";
 import {
   highlightOf,
@@ -247,17 +247,17 @@ export class ChatView {
   }
 
   /** 운영자 블라인드 처리 — 해당 메시지에 취소선 표시 */
-  markBlinded(userIdHash: string, msgTime: number): void {
+  markBlinded(userIdHash: string, msgTime: number, kind: BlindType = "moderator"): void {
     const rows = this.container.querySelectorAll<HTMLElement>(
       `.msg[data-uid="${CSS.escape(userIdHash)}"]`,
     );
     for (const row of rows) {
       if (row.dataset.time !== String(msgTime)) continue;
-      row.classList.add("blinded", "blind-moderator");
+      row.classList.add("blinded", `blind-${kind}`);
       if (!row.querySelector(".blind-tag")) {
         const tag = document.createElement("span");
         tag.className = "blind-tag";
-        tag.textContent = "🚫 블라인드";
+        tag.textContent = kind === "cleanbot" ? "🤖 클린봇" : "🚫 블라인드";
         row.querySelector(".time")?.after(tag);
       }
     }

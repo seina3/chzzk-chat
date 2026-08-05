@@ -40,7 +40,7 @@ interface ChzzkChatOptions {
   /** 로그인 유저의 닉네임 (내가 보낸 메시지 표시용) */
   nickname?: string;
   onMessage: (m: ChatMessage) => void;
-  onBlind: (userIdHash: string, msgTime: number) => void;
+  onBlind: (userIdHash: string, msgTime: number, kind: BlindType) => void;
   onStatus: (status: ChatStatus, detail?: string) => void;
   /** 서버가 돌려준 오류 (전송 실패 원인 등) */
   onError: (message: string) => void;
@@ -348,15 +348,21 @@ export class ChzzkChat {
         const b = data.bdy ?? {};
         const uid = b.userId ?? b.userIdHash ?? "";
         const time = b.messageTime ?? b.msgTime ?? 0;
+        // 누가 가렸는지는 blindType으로 갈린다 — 클린봇이면 문구 자체가
+        // 걸린 것이고, BLIND면 채널 쪽 조치(제재·제한)다
+        const kind: BlindType = b.blindType === "CBOTBLIND" ? "cleanbot" : "moderator";
         // 방금 보낸 내 메시지가 블라인드되면 전송은 됐지만 노출되지 않는다
         if (uid && uid === this.opts.uid && Date.now() - this.lastSentAt < 10_000) {
           this.clearEchoTimer();
           this.opts.onError(
-            "보낸 메시지가 치지직에서 블라인드 처리되었습니다. " +
-              "채팅 제한(구독자·팔로워 전용, 도배 방지, 계정 제재 등)에 걸렸는지 확인해 주세요.",
+            kind === "cleanbot"
+              ? "보낸 메시지를 클린봇이 가렸습니다. 다른 표현으로 바꿔 보세요."
+              : "보낸 메시지가 이 채널에서 가려졌습니다. 전송 자체는 되었으니," +
+                " 이 채널에서 채팅 제한(임시 제한, 구독자·팔로워 전용 등)에" +
+                " 걸려 있는지 확인해 주세요.",
           );
         }
-        if (uid && time) this.opts.onBlind(uid, time);
+        if (uid && time) this.opts.onBlind(uid, time, kind);
         break;
       }
     }

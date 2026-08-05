@@ -89,10 +89,10 @@ const collector = new ChatCollector({
     logMessage(m);
     panes.get(m.channelId)?.chat.add(m);
   },
-  onBlind: (channelId, uid, time) => {
+  onBlind: (channelId, uid, time, kind) => {
     // 기록에도 남겨야 검색·유저 기록에서도 취소선으로 보인다
-    markMessageBlinded(channelId, uid, time);
-    panes.get(channelId)?.chat.markBlinded(uid, time);
+    markMessageBlinded(channelId, uid, time, kind);
+    panes.get(channelId)?.chat.markBlinded(uid, time, kind);
   },
   onError: (channelId, message) => {
     const pane = panes.get(channelId);

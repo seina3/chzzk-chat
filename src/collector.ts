@@ -7,14 +7,19 @@ import {
   getUserStatus,
 } from "./chzzk/api";
 import { ChzzkChat, type ChatStatus } from "./chzzk/chat";
-import type { ChatMessage, LiveInfo } from "./chzzk/types";
+import type { BlindType, ChatMessage, LiveInfo } from "./chzzk/types";
 import { getChannels, getSettings, hasAuth } from "./settings";
 
 export type ChannelStatus = ChatStatus | "idle";
 
 interface CollectorOptions {
   onMessage(m: ChatMessage): void;
-  onBlind(channelId: string, userIdHash: string, msgTime: number): void;
+  onBlind(
+    channelId: string,
+    userIdHash: string,
+    msgTime: number,
+    kind: BlindType,
+  ): void;
   onError(channelId: string, message: string): void;
   onDebug(channelId: string, direction: "→" | "←", frame: string): void;
   onStatus(channelId: string, status: ChannelStatus, detail?: string): void;
@@ -267,7 +272,8 @@ export class ChatCollector {
         uid: this.uid,
         nickname: this.nickname,
         onMessage: (m) => this.opts.onMessage(m),
-        onBlind: (uid, time) => this.opts.onBlind(channelId, uid, time),
+        onBlind: (uid, time, kind) =>
+          this.opts.onBlind(channelId, uid, time, kind),
         onError: (message) => this.opts.onError(channelId, message),
         onDebug: (direction, frame) =>
           this.opts.onDebug(channelId, direction, frame),
