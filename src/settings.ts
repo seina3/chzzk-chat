@@ -60,6 +60,16 @@ export interface Settings {
    * 치지직 응답에서 장착 여부를 읽어내지 못할 때 대신 쓴다.
    */
   badgeChoices: Record<string, string[]>;
+  /** 채널을 묶어 두는 폴더 (표시 순서대로) */
+  folders: ChannelFolder[];
+}
+
+/** 사이드바에서 채널 몇 개를 묶어 접었다 펼 수 있는 묶음 */
+export interface ChannelFolder {
+  id: string;
+  name: string;
+  /** 접어 둔 상태인지 */
+  collapsed: boolean;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -78,6 +88,7 @@ const DEFAULT_SETTINGS: Settings = {
   paneStyles: {},
   panePresets: [],
   badgeChoices: {},
+  folders: [],
 };
 
 export interface SavedChannel {
@@ -89,6 +100,8 @@ export interface SavedChannel {
   alias?: string;
   /** 마지막으로 확인한 방송의 시작 시각(ms) — "최신순" 정렬용 */
   lastOpenAt?: number;
+  /** 들어가 있는 폴더 (없으면 목록 바깥) */
+  folderId?: string;
 }
 
 /** 화면에 표시할 이름 (별명이 있으면 별명) */

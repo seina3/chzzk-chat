@@ -23,6 +23,8 @@
           <button data-order="recent" title="최근에 방송을 켠 순서">최신순</button>
           <span class="sep">·</span>
           <button data-order="name">가나다순</button>
+          <span class="sep">·</span>
+          <button id="add-folder" title="채널을 묶어 둘 폴더를 만듭니다">＋폴더</button>
         </div>
         <div class="sidebar-order" id="pane-layout">
           <button data-layout="columns" title="창을 좌우로 늘어놓기">세로분할</button>
@@ -122,9 +124,17 @@
       <li class="danger" data-action="remove">목록에서 삭제</li>
     </ul>
 
+    <ul id="folder-menu" class="context-menu hidden">
+      <li data-action="toggle">접기 / 펴기</li>
+      <li data-action="rename">폴더 이름 바꾸기</li>
+      <li data-action="move-up">위로 옮기기</li>
+      <li data-action="move-down">아래로 옮기기</li>
+      <li class="danger" data-action="remove">폴더 없애기</li>
+    </ul>
+
     <dialog id="rename-modal">
       <div class="modal-header">
-        <h2>채널 별명</h2>
+        <h2 id="rename-title">채널 별명</h2>
         <button id="rename-close">×</button>
       </div>
       <p class="settings-help">이 앱에서만 쓰는 이름입니다. 비우면 원래 채널명으로 돌아갑니다.</p>

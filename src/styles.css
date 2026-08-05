@@ -379,6 +379,99 @@ button:disabled {
   font-size: 12.5px;
 }
 
+/* ---------- 채널 폴더 ---------- */
+
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  margin: 4px 0 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 700;
+  user-select: none;
+}
+
+.folder:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.folder.drop-target {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+}
+
+.folder-arrow {
+  flex-shrink: 0;
+  font-size: 9px;
+  width: 10px;
+}
+
+.folder-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-count {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 폴더에 들어 있는 채널은 한 칸 들여쓴다 */
+.channel.nested {
+  margin-left: 14px;
+}
+
+/* 끌고 있는 동안에만 나오는 "폴더 밖으로 빼기" 자리 */
+.folder-out {
+  display: none;
+  margin: 6px 2px 2px;
+  padding: 9px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: center;
+}
+
+#channel-list.dragging .folder-out {
+  display: block;
+}
+
+.folder-out.drop-target {
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--text);
+}
+
+/* 접힌 사이드바에서는 폴더도 화살표만 남긴다 —
+   머리글까지 감추면 접어 둔 폴더의 채널을 다시 펼 길이 없어진다 */
+#sidebar.collapsed .folder-name,
+#sidebar.collapsed .folder-out {
+  display: none;
+}
+
+#sidebar.collapsed .folder {
+  justify-content: center;
+  padding: 6px 4px;
+}
+
+#sidebar.collapsed .channel.nested {
+  margin-left: 0;
+}
+
 .channel.active .channel-name {
   font-weight: 600;
 }

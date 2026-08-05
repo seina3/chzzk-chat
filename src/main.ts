@@ -50,6 +50,7 @@ import {
   saveChannels,
   saveSettings,
   sortChannels,
+  type ChannelFolder,
   type ChannelOrder,
   type LogFormat,
   type PaneLayout,
@@ -174,51 +175,233 @@ function orderedChannels(): SavedChannel[] {
   });
 }
 
+/**
+ * 사이드바 목록.
+ * 폴더를 먼저 늘어놓고 (접혀 있으면 머리글만), 어느 폴더에도 넣지 않은
+ * 채널을 그 아래에 둔다. 정렬 방식은 묶음 안에서 그대로 적용된다.
+ */
 function renderChannelList(): void {
   const listEl = document.getElementById("channel-list")!;
   const order = getSettings().channelOrder;
+  const folders = getSettings().folders;
   listEl.innerHTML = "";
+
+  const known = new Set(folders.map((f) => f.id));
+  const inFolder = new Map<string, SavedChannel[]>();
+  const loose: SavedChannel[] = [];
   for (const ch of orderedChannels()) {
-    const li = document.createElement("li");
-    li.className = panes.has(ch.channelId) ? "channel active" : "channel";
-    li.dataset.channelId = ch.channelId;
-    // 창 영역으로 끌어다 놓을 수 있어야 하므로 항상 드래그 가능
-    li.draggable = true;
-    const img = ch.imageUrl
-      ? `<img src="${escapeHtml(ch.imageUrl)}" alt="" loading="lazy">`
-      : `<span class="channel-noimg"></span>`;
-    const live = collector.isLive(ch.channelId) ? `<span class="dot"></span>` : "";
-    // 수집 중(연결됨) 표시 — 보고 있지 않아도 채팅이 쌓이고 있음을 알린다
-    const rec =
-      collector.getStatus(ch.channelId) === "connected"
-        ? `<span class="rec" title="채팅 수집 중">●</span>`
-        : "";
-    // 이름이 잘리므로 전체 이름과 채널 ID를 툴팁으로 보여준다
-    const shown = displayName(ch);
-    li.title =
-      (ch.alias ? `${shown} (원래 이름: ${ch.name})` : shown) +
-      `\n${ch.channelId}` +
-      "\n오른쪽으로 끌어다 놓으면 나란히 볼 수 있습니다" +
-      (order === "manual" ? "\n목록 안에서 끌면 순서가 바뀝니다" : "");
-    li.innerHTML = `${img}<span class="channel-name">${escapeHtml(shown)}</span>${rec}${live}<button class="channel-remove" title="삭제">×</button>`;
-    li.addEventListener("click", (e) => {
-      if ((e.target as HTMLElement).classList.contains("channel-remove")) {
-        void removeChannel(ch.channelId);
-      } else {
-        // Ctrl(⌘)을 누르면 옆에 나란히, 그냥 누르면 상황에 맞게
-        // (창이 하나면 바꿔 열고, 여럿이면 팝업으로 띄운다)
-        void openChannel(ch.channelId, e.ctrlKey || e.metaKey ? "add" : "auto");
-      }
-    });
-    li.addEventListener("auxclick", (e) => {
-      if (e.button === 1) void openChannel(ch.channelId, "add");
-    });
-    li.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      openChannelMenu(ch.channelId, e.clientX, e.clientY);
-    });
-    listEl.appendChild(li);
+    // 폴더가 없어진 채널은 목록 바깥에 둔다
+    if (ch.folderId && known.has(ch.folderId)) {
+      const list = inFolder.get(ch.folderId);
+      if (list) list.push(ch);
+      else inFolder.set(ch.folderId, [ch]);
+    } else loose.push(ch);
   }
+
+  for (const folder of folders) {
+    const items = inFolder.get(folder.id) ?? [];
+    listEl.appendChild(folderRow(folder, items.length));
+    if (folder.collapsed) continue;
+    for (const ch of items) listEl.appendChild(channelRow(ch, order, true));
+  }
+  for (const ch of loose) listEl.appendChild(channelRow(ch, order, false));
+
+  // 폴더에서 빼내려면 놓을 자리가 있어야 한다 (끌고 있을 때만 보인다)
+  if (folders.length > 0) {
+    const out = document.createElement("li");
+    out.className = "folder-out";
+    out.dataset.folderOut = "1";
+    out.textContent = "폴더 밖으로 빼기";
+    listEl.appendChild(out);
+  }
+}
+
+function folderRow(folder: ChannelFolder, count: number): HTMLElement {
+  const li = document.createElement("li");
+  li.className = folder.collapsed ? "folder collapsed" : "folder";
+  li.dataset.folderId = folder.id;
+  li.title = `${folder.name}\n눌러서 접거나 펴고, 채널을 끌어다 놓으면 이 폴더에 들어갑니다`;
+  li.innerHTML =
+    `<span class="folder-arrow">${folder.collapsed ? "▸" : "▾"}</span>` +
+    `<span class="folder-name">${escapeHtml(folder.name)}</span>` +
+    `<span class="folder-count">${count}</span>`;
+  li.addEventListener("click", () => toggleFolder(folder.id));
+  li.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    openFolderMenu(folder.id, e.clientX, e.clientY);
+  });
+  return li;
+}
+
+function channelRow(
+  ch: SavedChannel,
+  order: ChannelOrder,
+  nested: boolean,
+): HTMLElement {
+  const li = document.createElement("li");
+  li.className = panes.has(ch.channelId) ? "channel active" : "channel";
+  if (nested) li.classList.add("nested");
+  li.dataset.channelId = ch.channelId;
+  // 창 영역으로 끌어다 놓을 수 있어야 하므로 항상 드래그 가능
+  li.draggable = true;
+  const img = ch.imageUrl
+    ? `<img src="${escapeHtml(ch.imageUrl)}" alt="" loading="lazy">`
+    : `<span class="channel-noimg"></span>`;
+  const live = collector.isLive(ch.channelId) ? `<span class="dot"></span>` : "";
+  // 수집 중(연결됨) 표시 — 보고 있지 않아도 채팅이 쌓이고 있음을 알린다
+  const rec =
+    collector.getStatus(ch.channelId) === "connected"
+      ? `<span class="rec" title="채팅 수집 중">●</span>`
+      : "";
+  // 이름이 잘리므로 전체 이름과 채널 ID를 툴팁으로 보여준다
+  const shown = displayName(ch);
+  li.title =
+    (ch.alias ? `${shown} (원래 이름: ${ch.name})` : shown) +
+    `\n${ch.channelId}` +
+    "\n오른쪽으로 끌어다 놓으면 나란히 볼 수 있습니다" +
+    (order === "manual" ? "\n목록 안에서 끌면 순서가 바뀝니다" : "") +
+    "\n폴더 머리글로 끌어다 놓으면 그 폴더에 들어갑니다";
+  li.innerHTML = `${img}<span class="channel-name">${escapeHtml(shown)}</span>${rec}${live}<button class="channel-remove" title="삭제">×</button>`;
+  li.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).classList.contains("channel-remove")) {
+      void removeChannel(ch.channelId);
+    } else {
+      // Ctrl(⌘)을 누르면 옆에 나란히, 그냥 누르면 상황에 맞게
+      // (창이 하나면 바꿔 열고, 여럿이면 팝업으로 띄운다)
+      void openChannel(ch.channelId, e.ctrlKey || e.metaKey ? "add" : "auto");
+    }
+  });
+  li.addEventListener("auxclick", (e) => {
+    if (e.button === 1) void openChannel(ch.channelId, "add");
+  });
+  li.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    openChannelMenu(ch.channelId, e.clientX, e.clientY);
+  });
+  return li;
+}
+
+// ---------- 채널 폴더 ----------
+
+function addFolder(): void {
+  const folders = [...getSettings().folders];
+  const id = `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  folders.push({ id, name: `폴더 ${folders.length + 1}`, collapsed: false });
+  saveSettings({ folders });
+  renderChannelList();
+  openFolderRename(id);
+}
+
+function toggleFolder(folderId: string): void {
+  const folders = getSettings().folders.map((f) =>
+    f.id === folderId ? { ...f, collapsed: !f.collapsed } : f,
+  );
+  saveSettings({ folders });
+  renderChannelList();
+}
+
+function renameFolder(folderId: string, name: string): void {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const folders = getSettings().folders.map((f) =>
+    f.id === folderId ? { ...f, name: trimmed } : f,
+  );
+  saveSettings({ folders });
+  renderChannelList();
+}
+
+/** 폴더만 없앤다 — 안에 있던 채널은 목록 바깥으로 나온다 */
+function removeFolder(folderId: string): void {
+  saveSettings({ folders: getSettings().folders.filter((f) => f.id !== folderId) });
+  const channels = getChannels();
+  for (const ch of channels) if (ch.folderId === folderId) delete ch.folderId;
+  saveChannels(channels);
+  renderChannelList();
+}
+
+function moveFolder(folderId: string, delta: number): void {
+  const folders = [...getSettings().folders];
+  const from = folders.findIndex((f) => f.id === folderId);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= folders.length) return;
+  const [item] = folders.splice(from, 1);
+  folders.splice(to, 0, item);
+  saveSettings({ folders });
+  renderChannelList();
+}
+
+/**
+ * 채널을 폴더에 넣거나 (folderId), 폴더 밖으로 뺀다 (null).
+ * 넣을 때는 그 폴더의 맨 뒤에 붙여 순서가 뒤엉키지 않게 한다.
+ */
+function moveChannelToFolder(channelId: string, folderId: string | null): void {
+  const channels = getChannels();
+  const from = channels.findIndex((c) => c.channelId === channelId);
+  if (from < 0) return;
+  const [item] = channels.splice(from, 1);
+  if (folderId) item.folderId = folderId;
+  else delete item.folderId;
+
+  let at = channels.length;
+  for (let i = channels.length - 1; i >= 0; i--) {
+    if ((channels[i].folderId ?? null) === folderId) {
+      at = i + 1;
+      break;
+    }
+  }
+  channels.splice(at, 0, item);
+  saveChannels(channels);
+  renderChannelList();
+}
+
+let menuFolderId: string | null = null;
+
+function openFolderMenu(folderId: string, x: number, y: number): void {
+  const menu = document.getElementById("folder-menu")!;
+  menuFolderId = folderId;
+  menu.classList.remove("hidden");
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 8)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - rect.height - 8)}px`;
+}
+
+function closeFolderMenu(): void {
+  document.getElementById("folder-menu")!.classList.add("hidden");
+  menuFolderId = null;
+}
+
+function initFolders(): void {
+  document.getElementById("add-folder")!.addEventListener("click", addFolder);
+
+  const menu = document.getElementById("folder-menu")!;
+  menu.addEventListener("click", (e) => {
+    const action = (e.target as HTMLElement).closest<HTMLElement>("[data-action]")
+      ?.dataset.action;
+    const folderId = menuFolderId;
+    closeFolderMenu();
+    if (!action || !folderId) return;
+    switch (action) {
+      case "toggle":
+        toggleFolder(folderId);
+        break;
+      case "rename":
+        openFolderRename(folderId);
+        break;
+      case "move-up":
+        moveFolder(folderId, -1);
+        break;
+      case "move-down":
+        moveFolder(folderId, 1);
+        break;
+      case "remove":
+        removeFolder(folderId);
+        break;
+    }
+  });
+  window.addEventListener("click", (e) => {
+    if (!menu.contains(e.target as Node)) closeFolderMenu();
+  });
+  window.addEventListener("blur", closeFolderMenu);
 }
 
 // ---------- 채널 순서 ----------
@@ -229,7 +412,7 @@ let dragChannelId: string | null = null;
 function syncOrderButtons(): void {
   const order = getSettings().channelOrder;
   for (const btn of document.querySelectorAll<HTMLButtonElement>(
-    "#channel-order button",
+    "#channel-order button[data-order]",
   )) {
     btn.classList.toggle("active", btn.dataset.order === order);
   }
@@ -237,7 +420,7 @@ function syncOrderButtons(): void {
 
 function initChannelOrder(): void {
   for (const btn of document.querySelectorAll<HTMLButtonElement>(
-    "#channel-order button",
+    "#channel-order button[data-order]",
   )) {
     btn.addEventListener("click", () => {
       saveSettings({ channelOrder: btn.dataset.order as ChannelOrder });
@@ -254,50 +437,84 @@ function initChannelOrder(): void {
     if (!li?.dataset.channelId) return;
     dragChannelId = li.dataset.channelId;
     li.classList.add("dragging");
+    // 끌고 있는 동안에만 "폴더 밖으로 빼기" 자리를 보여 준다
+    listEl.classList.add("dragging");
     e.dataTransfer?.setData("text/plain", dragChannelId);
   });
 
   // 목록이 길면 끌면서 위아래로 흘러야 끝까지 옮길 수 있다
   const listScroller = edgeScroller(listEl, "y", 52, 12);
 
-  listEl.addEventListener("dragend", () => {
+  const clearDragState = () => {
     dragChannelId = null;
     listScroller.stop();
+    listEl.classList.remove("dragging");
     for (const el of listEl.querySelectorAll(".drop-target, .dragging")) {
       el.classList.remove("drop-target", "dragging");
     }
-  });
+  };
+
+  listEl.addEventListener("dragend", clearDragState);
 
   listEl.addEventListener("dragover", (e) => {
     if (!dragChannelId) return;
     e.preventDefault();
     listScroller.update(e);
-    const li = (e.target as HTMLElement).closest<HTMLElement>(".channel");
+    // 채널 위면 그 자리에, 폴더 머리글이나 "밖으로 빼기" 위면 그 묶음으로
+    const over = (e.target as HTMLElement).closest<HTMLElement>(
+      ".channel, .folder, .folder-out",
+    );
     for (const el of listEl.querySelectorAll(".drop-target")) {
       el.classList.remove("drop-target");
     }
-    li?.classList.add("drop-target");
+    over?.classList.add("drop-target");
   });
 
   listEl.addEventListener("drop", (e) => {
     e.preventDefault();
-    const li = (e.target as HTMLElement).closest<HTMLElement>(".channel");
-    const target = li?.dataset.channelId;
     const moved = dragChannelId;
-    dragChannelId = null;
-    listScroller.stop();
-    if (!moved || !target || moved === target) {
+    const over = (e.target as HTMLElement).closest<HTMLElement>(
+      ".channel, .folder, .folder-out",
+    );
+    clearDragState();
+    if (!moved) {
       renderChannelList();
+      return;
+    }
+
+    // 폴더 머리글에 놓으면 그 폴더로, 아래 띠에 놓으면 폴더 밖으로.
+    // 묶음을 바꾸는 것은 순서 바꾸기와 달라 정렬 방식과 상관없이 된다.
+    if (over?.dataset.folderId) {
+      moveChannelToFolder(moved, over.dataset.folderId);
+      return;
+    }
+    if (over?.dataset.folderOut) {
+      moveChannelToFolder(moved, null);
+      return;
+    }
+
+    const target = over?.dataset.channelId;
+    if (!target || moved === target) {
+      renderChannelList();
+      return;
+    }
+
+    const channels = getChannels();
+    const from = channels.findIndex((c) => c.channelId === moved);
+    const to = channels.findIndex((c) => c.channelId === target);
+    if (from < 0 || to < 0) return;
+
+    // 다른 폴더의 채널 위에 놓았으면 그 폴더로 따라 들어간다
+    const intoFolder = channels[to].folderId ?? null;
+    const sameGroup = (channels[from].folderId ?? null) === intoFolder;
+    if (!sameGroup) {
+      moveChannelToFolder(moved, intoFolder);
       return;
     }
     if (getSettings().channelOrder !== "manual") {
       notify("순서를 바꾸려면 목록 위의 «직접정렬»을 골라 주세요.");
       return;
     }
-    const channels = getChannels();
-    const from = channels.findIndex((c) => c.channelId === moved);
-    const to = channels.findIndex((c) => c.channelId === target);
-    if (from < 0 || to < 0) return;
     const [item] = channels.splice(from, 1);
     channels.splice(to, 0, item);
     saveChannels(channels);
@@ -418,9 +635,14 @@ function initRenameDialog(): void {
   const dialog = document.getElementById("rename-modal") as HTMLDialogElement;
   const input = document.getElementById("rename-input") as HTMLInputElement;
   const save = () => {
-    if (renameChannelId) setChannelAlias(renameChannelId, input.value);
+    if (renameFolderId) renameFolder(renameFolderId, input.value);
+    else if (renameChannelId) setChannelAlias(renameChannelId, input.value);
     dialog.close();
   };
+  dialog.addEventListener("close", () => {
+    renameChannelId = null;
+    renameFolderId = null;
+  });
   document.getElementById("rename-close")!.addEventListener("click", () =>
     dialog.close(),
   );
@@ -431,14 +653,28 @@ function initRenameDialog(): void {
 }
 
 let renameChannelId: string | null = null;
+let renameFolderId: string | null = null;
 
 function openRenameDialog(channelId: string): void {
+  const ch = getChannels().find((c) => c.channelId === channelId);
+  renameFolderId = null;
+  renameChannelId = channelId;
+  showRename("채널 별명", ch?.alias ?? "", ch?.name ?? "채널 이름");
+}
+
+function openFolderRename(folderId: string): void {
+  const folder = getSettings().folders.find((f) => f.id === folderId);
+  renameChannelId = null;
+  renameFolderId = folderId;
+  showRename("폴더 이름", folder?.name ?? "", "폴더 이름");
+}
+
+function showRename(title: string, value: string, placeholder: string): void {
   const dialog = document.getElementById("rename-modal") as HTMLDialogElement;
   const input = document.getElementById("rename-input") as HTMLInputElement;
-  const ch = getChannels().find((c) => c.channelId === channelId);
-  renameChannelId = channelId;
-  input.value = ch?.alias ?? "";
-  input.placeholder = ch?.name ?? "채널 이름";
+  document.getElementById("rename-title")!.textContent = title;
+  input.value = value;
+  input.placeholder = placeholder;
   dialog.showModal();
   input.focus();
   input.select();
@@ -1335,6 +1571,7 @@ function renderBadges(): void {
   }
   // 더 달 수 없을 때는 남은 것들을 흐리게 해 한도를 눈에 보이게 한다
   const full = badgeOn.size >= BADGE_LIMIT;
+  const order = [...badgeOn];
   listEl.innerHTML = badgeList
     .map((b) => {
       const on = badgeOn.has(b.badgeId);
@@ -1344,7 +1581,8 @@ function renderBadges(): void {
         ` title="${escapeHtml(b.badgeId)}" aria-pressed="${on}">` +
         badgeFaceHtml(b) +
         `<span class="badge-choice-name">${escapeHtml(b.title)}</span>` +
-        (on ? `<span class="badge-check">✓</span>` : "") +
+        // 누른 차례가 채팅에 붙는 차례라, 몇 번째인지 숫자로 보여 준다
+        (on ? `<span class="badge-check">${order.indexOf(b.badgeId) + 1}</span>` : "") +
         `</button>`
       );
     })
@@ -1363,8 +1601,10 @@ function renderBadgePreview(): void {
   const el = document.getElementById("badge-preview")!;
   const nick = badgeNickname || loginNickname || "나";
   const uid = collector.getMyUid() ?? "";
-  const badges = badgeList
-    .filter((b) => badgeOn.has(b.badgeId))
+  // 목록에 놓인 차례가 아니라 내가 누른 차례대로 붙는다 — 치지직도 그렇다
+  const badges = [...badgeOn]
+    .map((id) => badgeList.find((b) => b.badgeId === id))
+    .filter((b): b is ChzzkBadge => !!b)
     .map((b) => `<span class="badge-preview-icon">${badgeFaceHtml(b)}</span>`)
     .join("");
   el.innerHTML =
@@ -1431,8 +1671,10 @@ function initBadgeModal(): void {
     void saveBadges();
   });
 
+  // 이미 비어 보여도 눌리게 둔다 — 치지직 쪽과 어긋났을 때
+  // 확실히 떼어 맞출 수 있는 길이 필요하다
   document.getElementById("badge-clear")!.addEventListener("click", () => {
-    if (!badgeChatId || badgeOn.size === 0) return;
+    if (!badgeChatId) return;
     badgeOn.clear();
     renderBadges();
     void saveBadges();
@@ -2050,6 +2292,7 @@ async function main(): Promise<void> {
   initWebviewBehavior();
   initChannelMenu();
   initChannelOrder();
+  initFolders();
   initSidebarToggle();
   initPaneDrop();
   initPaneReorder();
