@@ -65,6 +65,8 @@ export interface ChannelFolder {
   name: string;
   /** 접어 둔 상태인지 */
   collapsed: boolean;
+  /** 폴더 이름·테두리에 입힐 색 (없으면 기본색) */
+  color?: string;
 }
 
 const DEFAULT_SETTINGS: Settings = {

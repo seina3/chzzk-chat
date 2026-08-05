@@ -206,6 +206,9 @@ function renderChannelList(): void {
     group.className = folder.collapsed
       ? "folder-group collapsed"
       : "folder-group";
+    // 상자 전체를 이 폴더의 놓을 자리로 삼는다 (채널 사이 틈에서도 유효)
+    group.dataset.folderId = folder.id;
+    if (folder.color) group.style.setProperty("--folder-color", folder.color);
     group.appendChild(folderRow(folder, items.length));
     if (!folder.collapsed) {
       const sub = document.createElement("ul");
@@ -339,6 +342,54 @@ function removeFolder(folderId: string): void {
   renderChannelList();
 }
 
+function setFolderColor(folderId: string, color: string | null): void {
+  const folders = getSettings().folders.map((f) =>
+    f.id === folderId ? { ...f, color: color ?? undefined } : f,
+  );
+  saveSettings({ folders });
+  renderChannelList();
+}
+
+function openFolderColor(folderId: string): void {
+  const dialog = document.getElementById("folder-color-modal") as HTMLDialogElement;
+  const picker = document.getElementById("folder-color") as HTMLInputElement;
+  const folder = getSettings().folders.find((f) => f.id === folderId);
+  colorFolderId = folderId;
+  document.getElementById("folder-color-title")!.textContent =
+    `${folder?.name ?? "폴더"} 색`;
+  if (folder?.color) picker.value = folder.color;
+  document.getElementById("folder-swatches")!.innerHTML = MARK_COLORS.map(
+    (c) =>
+      `<button class="swatch${c === folder?.color ? " active" : ""}" data-color="${c}" style="background:${c}" title="${c}"></button>`,
+  ).join("");
+  dialog.showModal();
+}
+
+let colorFolderId: string | null = null;
+
+function initFolderColorDialog(): void {
+  const dialog = document.getElementById("folder-color-modal") as HTMLDialogElement;
+  const picker = document.getElementById("folder-color") as HTMLInputElement;
+  const apply = (color: string | null) => {
+    if (colorFolderId) setFolderColor(colorFolderId, color);
+    dialog.close();
+  };
+  document
+    .getElementById("folder-color-close")!
+    .addEventListener("click", () => dialog.close());
+  document.getElementById("folder-swatches")!.addEventListener("click", (e) => {
+    const c = (e.target as HTMLElement).dataset.color;
+    if (c) apply(c);
+  });
+  picker.addEventListener("change", () => apply(picker.value));
+  document
+    .getElementById("folder-color-clear")!
+    .addEventListener("click", () => apply(null));
+  dialog.addEventListener("close", () => {
+    colorFolderId = null;
+  });
+}
+
 /** 끌어 온 폴더를 놓은 폴더 자리에 끼운다 */
 function reorderFolders(movedId: string, ontoId: string): void {
   const folders = [...getSettings().folders];
@@ -419,6 +470,9 @@ function initFolders(): void {
       case "rename":
         openFolderRename(folderId);
         break;
+      case "color":
+        openFolderColor(folderId);
+        break;
       case "move-up":
         moveFolder(folderId, -1);
         break;
@@ -487,11 +541,21 @@ function initChannelOrder(): void {
   // 목록이 길면 끌면서 위아래로 흘러야 끝까지 옮길 수 있다
   const listScroller = edgeScroller(listEl, "y", 52, 12);
 
+  // 지금 표시해 둔 놓을 자리 — 같은 곳이면 손대지 않아야 깜빡이지 않는다
+  let dropTarget: HTMLElement | null = null;
+  const markDropTarget = (el: HTMLElement | null) => {
+    if (el === dropTarget) return;
+    dropTarget?.classList.remove("drop-target");
+    dropTarget = el;
+    el?.classList.add("drop-target");
+  };
+
   const clearDragState = () => {
     dragChannelId = null;
     dragFolderId = null;
     listScroller.stop();
     listEl.classList.remove("dragging");
+    dropTarget = null;
     for (const el of listEl.querySelectorAll(".drop-target, .dragging")) {
       el.classList.remove("drop-target", "dragging");
     }
@@ -503,16 +567,15 @@ function initChannelOrder(): void {
     if (!dragChannelId && !dragFolderId) return;
     e.preventDefault();
     listScroller.update(e);
-    // 폴더를 끌 때는 다른 폴더 머리글에만 놓을 수 있다
+    // 폴더를 끌 때는 다른 폴더에만 놓을 수 있다.
+    // 폴더 상자(.folder-group)까지 받는 이유는, 채널 사이 빈 틈을 지날 때
+    // 표시가 꺼졌다 켜지며 떨려 보이기 때문이다 — 상자 안에서는 계속 켜 둔다.
     const over = (e.target as HTMLElement).closest<HTMLElement>(
-      dragFolderId ? ".folder" : ".channel, .folder, .folder-out",
+      dragFolderId
+        ? ".folder, .folder-group"
+        : ".channel, .folder, .folder-group, .folder-out",
     );
-    for (const el of listEl.querySelectorAll(".drop-target")) {
-      el.classList.remove("drop-target");
-    }
-    if (over && over.dataset.folderId !== dragFolderId) {
-      over.classList.add("drop-target");
-    }
+    markDropTarget(over && over.dataset.folderId !== dragFolderId ? over : null);
   });
 
   listEl.addEventListener("drop", (e) => {
@@ -1206,12 +1269,26 @@ function edgeScroller(
   return {
     update(e) {
       const box = el.getBoundingClientRect();
+      // 흐를 데가 없으면 굴리지 않는다 — 안 그러면 목록이 떨려 보인다
+      const canX = el.scrollWidth > el.clientWidth + 1;
+      const canY = el.scrollHeight > el.clientHeight + 1;
+      // 좁은 목록에서 가장자리가 너무 넓으면 어디를 잡아도 흐르게 된다
+      const edgeX = Math.min(edge, box.width / 4);
+      const edgeY = Math.min(edge, box.height / 4);
       const nearX =
-        e.clientX < box.left + edge ? -step : e.clientX > box.right - edge ? step : 0;
+        e.clientX < box.left + edgeX
+          ? -step
+          : e.clientX > box.right - edgeX
+            ? step
+            : 0;
       const nearY =
-        e.clientY < box.top + edge ? -step : e.clientY > box.bottom - edge ? step : 0;
-      dx = axis === "y" ? 0 : nearX;
-      dy = axis === "x" ? 0 : nearY;
+        e.clientY < box.top + edgeY
+          ? -step
+          : e.clientY > box.bottom - edgeY
+            ? step
+            : 0;
+      dx = axis === "y" || !canX ? 0 : nearX;
+      dy = axis === "x" || !canY ? 0 : nearY;
       if (dx === 0 && dy === 0) {
         stop();
         return;
@@ -1228,7 +1305,7 @@ const paneScroller = edgeScroller(panesEl, "both", 90, 18);
 /** 사이드바에서 창 영역으로 채널을 끌어다 놓으면 나란히 연다 */
 function initPaneDrop(): void {
   panesEl.addEventListener("dragover", (e) => {
-    if (!dragChannelId) return;
+    if (!dragChannelId && !dragFolderId) return;
     e.preventDefault();
     paneScroller.update(e);
     panesEl.classList.add("drop-here");
@@ -1239,11 +1316,36 @@ function initPaneDrop(): void {
   panesEl.addEventListener("drop", (e) => {
     panesEl.classList.remove("drop-here");
     const id = dragChannelId;
+    const folderId = dragFolderId;
     dragChannelId = null;
-    if (!id) return;
+    dragFolderId = null;
+    if (!id && !folderId) return;
     e.preventDefault();
-    void openChannel(id, "add");
+    if (folderId) void openFolderPanes(folderId);
+    else if (id) void openChannel(id, "add");
   });
+}
+
+/** 폴더를 창 영역에 끌어다 놓으면 그 안의 채널을 모두 나란히 연다 */
+async function openFolderPanes(folderId: string): Promise<void> {
+  const folder = getSettings().folders.find((f) => f.id === folderId);
+  const items = orderedChannels().filter((c) => c.folderId === folderId);
+  if (items.length === 0) {
+    notify(`«${folder?.name ?? "폴더"}»에 채널이 없습니다.`);
+    return;
+  }
+  const room = PANE_LIMIT[getSettings().paneLayout] - dockedPaneCount();
+  let opened = 0;
+  for (const ch of items) {
+    if (panes.has(ch.channelId)) continue;
+    if (opened >= room) break;
+    await openChannel(ch.channelId, "add");
+    opened += 1;
+  }
+  const left = items.filter((c) => !panes.has(c.channelId)).length;
+  if (left > 0) {
+    notify(`창을 더 붙일 수 없어 ${left}개는 열지 못했습니다.`);
+  }
 }
 
 // ---------- 설정 모달 ----------
@@ -2331,6 +2433,7 @@ async function main(): Promise<void> {
   initChannelMenu();
   initChannelOrder();
   initFolders();
+  initFolderColorDialog();
   initSidebarToggle();
   initPaneDrop();
   initPaneReorder();

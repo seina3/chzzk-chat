@@ -88,10 +88,14 @@ export class ChatView {
     this.scrollToBottom();
   }
 
-  /** 스트리머가 친 채팅만 남겨 보기 (그리는 내용은 그대로, 화면에서만 거른다) */
+  /**
+   * 스트리머가 친 채팅만 남겨 보기 (그리는 내용은 그대로, 화면에서만 거른다).
+   * 켜든 끄든 보이는 줄이 확 달라져 보던 자리가 의미를 잃으므로,
+   * 두 경우 모두 최신 채팅으로 내려 준다.
+   */
   setStreamerOnly(on: boolean): void {
     this.container.classList.toggle("only-streamer", on);
-    if (on) this.scrollToBottom();
+    this.scrollToLatest();
   }
 
   addSystem(text: string): void {

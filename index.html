@@ -127,6 +127,7 @@
     <ul id="folder-menu" class="context-menu hidden">
       <li data-action="toggle">접기 / 펴기</li>
       <li data-action="rename">폴더 이름 바꾸기</li>
+      <li data-action="color">폴더 색 바꾸기</li>
       <li data-action="move-up">위로 옮기기</li>
       <li data-action="move-down">아래로 옮기기</li>
       <li class="danger" data-action="remove">폴더 없애기</li>
@@ -167,6 +168,19 @@
       <div class="color-row">
         <label>직접 고르기 <input type="color" id="highlight-color" value="#ff9f43" /></label>
         <button id="highlight-clear">강조 없애기</button>
+      </div>
+    </dialog>
+
+    <dialog id="folder-color-modal">
+      <div class="modal-header">
+        <h2 id="folder-color-title">폴더 색</h2>
+        <button id="folder-color-close">×</button>
+      </div>
+      <p class="settings-help">폴더 이름과 테두리에 입힐 색입니다. 묶음을 눈으로 구분하기 좋습니다.</p>
+      <div id="folder-swatches" class="swatches"></div>
+      <div class="color-row">
+        <label>직접 고르기 <input type="color" id="folder-color" value="#00e6a1" /></label>
+        <button id="folder-color-clear">기본색으로</button>
       </div>
     </dialog>
 
