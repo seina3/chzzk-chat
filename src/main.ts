@@ -1858,10 +1858,23 @@ function applyPaneLayout(): void {
   panesEl.style.setProperty("--cols", String(cols));
 
   for (const btn of document.querySelectorAll<HTMLButtonElement>(
-    "#pane-layout button",
+    "#pane-layout button[data-layout]",
   )) {
     btn.classList.toggle("active", btn.dataset.layout === layout);
   }
+  // 배치는 창을 열고 닫을 때마다 다시 잡으므로 여기서 같이 챙긴다
+  const closeAll = document.getElementById(
+    "close-all-panes",
+  ) as HTMLButtonElement | null;
+  if (closeAll) closeAll.disabled = panes.size === 0;
+}
+
+/** 열려 있는 채팅창을 모두 닫는다 (따로 띄운 팝업까지) */
+function closeAllPanes(): void {
+  if (panes.size === 0) return;
+  for (const id of [...panes.keys()]) closePane(id, false);
+  saveOpenChannels();
+  renderChannelList();
 }
 
 /** 배치가 바뀌면 창 높이가 달라지므로 모두 최신 채팅으로 내린다 */
@@ -1873,7 +1886,7 @@ function scrollPanesToLatest(): void {
 
 function initPaneLayout(): void {
   for (const btn of document.querySelectorAll<HTMLButtonElement>(
-    "#pane-layout button",
+    "#pane-layout button[data-layout]",
   )) {
     btn.addEventListener("click", () => {
       saveSettings({ paneLayout: btn.dataset.layout as PaneLayout });
@@ -1881,6 +1894,9 @@ function initPaneLayout(): void {
       scrollPanesToLatest();
     });
   }
+  document
+    .getElementById("close-all-panes")!
+    .addEventListener("click", closeAllPanes);
   applyPaneLayout();
   // 창 크기가 바뀌면 격자 열 수도 다시 계산한다
   window.addEventListener("resize", () => applyPaneLayout());
