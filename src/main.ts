@@ -72,7 +72,7 @@ import { UserHistoryModal } from "./ui/user-history";
 
 let notifyGranted = false;
 
-const userModal = new UserHistoryModal();
+const userModal = new UserHistoryModal((uid, nick) => openNoteDialog(uid, nick));
 const searchModal = new GlobalSearchModal((uid, nick) => {
   void userModal.open(uid, nick);
 });
@@ -2406,6 +2406,7 @@ function initMarksModal(): void {
   // 표시가 바뀌면 열려 있는 목록과 채팅 화면을 함께 갱신한다
   onMarksChanged(() => {
     if (dialog.open) renderMarksList();
+    userModal.refreshMarks();
     refreshOpenPanes();
   });
 }

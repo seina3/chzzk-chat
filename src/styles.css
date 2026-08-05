@@ -1314,8 +1314,35 @@ dialog::backdrop {
 }
 
 .modal-header h2 {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 15px;
   font-weight: 700;
+}
+
+/* 제목 옆에 붙는 글자 버튼 (× 보다 작게) */
+#user-modal-note {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 999px;
+}
+
+#user-modal-note:hover {
+  color: var(--streamer);
+  background: var(--bg-hover) !important;
+}
+
+.user-note.clickable {
+  cursor: pointer;
+}
+
+.user-note.clickable:hover {
+  background: rgb(255 255 255 / 0.1);
 }
 
 .modal-header button {

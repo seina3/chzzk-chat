@@ -47,16 +47,27 @@ export class UserHistoryModal {
   private stats: UserStats | null = null;
   private breakdown: UserChannelBreakdown[] = [];
 
-  constructor() {
+  private noteBtn: HTMLButtonElement;
+
+  constructor(
+    /** 📝 버튼이나 메모 줄을 누르면 메모 창을 연다 */
+    private onEditNote?: (userIdHash: string, nickname: string) => void,
+  ) {
     this.dialog = document.getElementById("user-modal") as HTMLDialogElement;
     this.titleEl = document.getElementById("user-modal-title")!;
     this.statsEl = document.getElementById("user-modal-stats")!;
     this.listEl = document.getElementById("user-modal-list")!;
     this.searchInput = document.getElementById("user-modal-search") as HTMLInputElement;
     this.loadMoreBtn = document.getElementById("user-modal-more") as HTMLButtonElement;
+    this.noteBtn = document.getElementById("user-modal-note") as HTMLButtonElement;
 
     document.getElementById("user-modal-close")!.addEventListener("click", () => {
       this.dialog.close();
+    });
+    this.noteBtn.addEventListener("click", () => this.editNote());
+    // 이미 적어 둔 메모 줄을 눌러도 고칠 수 있게 한다
+    this.statsEl.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".user-note")) this.editNote();
     });
     this.loadMoreBtn.addEventListener("click", () => void this.loadPage());
 
@@ -108,11 +119,26 @@ export class UserHistoryModal {
     await this.refresh();
   }
 
+  private editNote(): void {
+    // 익명 후원은 보낸 사람을 가릴 수 없어 메모를 달 데가 없다
+    if (this.userIdHash === "anonymous" || !this.userIdHash) return;
+    this.onEditNote?.(this.userIdHash, this.nickname);
+  }
+
+  /** 메모가 바뀌었을 때 요약 줄만 다시 그린다 */
+  refreshMarks(): void {
+    if (this.dialog.open) this.renderStats();
+  }
+
   /** 탭이나 범위가 바뀔 때마다 제목·요약·목록을 다시 맞춘다 */
   private async refresh(): Promise<void> {
     this.titleEl.textContent = this.channelId
       ? `${this.nickname} — ${channelName(this.channelId)}`
       : this.nickname;
+    this.noteBtn.classList.toggle(
+      "hidden",
+      this.userIdHash === "anonymous" || !this.onEditNote,
+    );
     this.syncTabs();
     this.searchInput.placeholder = this.searchHint();
     this.stats = await getUserStats(this.userIdHash, this.channelId);
@@ -170,8 +196,9 @@ export class UserHistoryModal {
         : "";
     const note = noteOf(this.userIdHash);
     const noteBox = note
-      ? `<div class="user-note">📝 ${escapeHtml(note)}</div>`
+      ? `<div class="user-note clickable" title="눌러서 메모 고치기">📝 ${escapeHtml(note)}</div>`
       : "";
+    this.noteBtn.textContent = note ? "📝 메모 고치기" : "📝 메모";
     const scope = this.channelId
       ? `<br><span class="uid">${escapeHtml(channelName(this.channelId))} 채널에서의 기록만 보고 있습니다.</span>`
       : "";
