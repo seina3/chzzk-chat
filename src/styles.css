@@ -1227,6 +1227,13 @@ button:disabled {
   background: #14f0b0;
 }
 
+/* 누를 때 눌리는 시늉(translateY)이 가운데 정렬(translateX)을 지워
+   버튼이 오른쪽으로 튀었다. 그 자리에서 손을 떼면 클릭이 되지 않아
+   최신 채팅으로 넘어가지 않았다 — 두 이동을 함께 준다. */
+.pane-scroll:active:not(:disabled) {
+  transform: translateX(-50%) translateY(1px);
+}
+
 /* 상태바 + 입력 */
 
 .pane-status {
