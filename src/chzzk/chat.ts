@@ -46,6 +46,12 @@ interface ChzzkChatOptions {
   onError: (message: string) => void;
   /** 진단 모드일 때 주고받은 원본 프레임 */
   onDebug?: (direction: "→" | "←", frame: string) => void;
+  /**
+   * 방금 보낸 내 채팅이 곧바로 가려졌을 때.
+   * 접속 토큰이 다른 세션에 밀려 낡았을 수 있어, 호출부가 토큰을 새로
+   * 받아 다시 붙어 볼 기회를 준다.
+   */
+  onSendBlinded?: () => void;
 }
 
 /** 제재 처분의 종류 */
@@ -354,13 +360,19 @@ export class ChzzkChat {
         // 방금 보낸 내 메시지가 블라인드되면 전송은 됐지만 노출되지 않는다
         if (uid && uid === this.opts.uid && Date.now() - this.lastSentAt < 10_000) {
           this.clearEchoTimer();
-          this.opts.onError(
-            kind === "cleanbot"
-              ? "보낸 메시지를 클린봇이 가렸습니다. 다른 표현으로 바꿔 보세요."
-              : "보낸 메시지가 이 채널에서 가려졌습니다. 전송 자체는 되었으니," +
-                " 이 채널에서 채팅 제한(임시 제한, 구독자·팔로워 전용 등)에" +
-                " 걸려 있는지 확인해 주세요.",
-          );
+          if (kind === "cleanbot") {
+            this.opts.onError(
+              "보낸 메시지를 클린봇이 가렸습니다. 다른 표현으로 바꿔 보세요.",
+            );
+          } else {
+            this.opts.onError(
+              "보낸 메시지가 이 채널에서 가려졌습니다. 전송 자체는 되었습니다.",
+            );
+            // 치지직 웹을 같이 켜 두면 나중에 받은 쪽이 접속 토큰을 가져가,
+            // 남은 쪽이 보낸 채팅은 접수만 되고 가려진다. 토큰을 새로 받아
+            // 다시 붙어 보게 한다.
+            this.opts.onSendBlinded?.();
+          }
         }
         if (uid && time) this.opts.onBlind(uid, time, kind);
         break;

@@ -32,6 +32,8 @@ interface CollectorOptions {
 const POLL_MS = 30_000;
 /** 통나무 파워는 자주 바뀌지 않아 5분에 한 번만 확인한다 */
 const LOG_POWER_MS = 300_000;
+/** 채팅이 가려졌다고 접속을 다시 맺는 간격 (계속 되풀이하지 않도록) */
+const TOKEN_RETRY_MS = 180_000;
 
 /**
  * 등록된 모든 채널의 채팅을 동시에 수집한다.
@@ -51,6 +53,8 @@ export class ChatCollector {
   private logPowerAt = new Map<string, number>();
   /** 이미 수령을 시도한 보상 ID — 같은 것을 두 번 부르지 않는다 */
   private claimedIds = new Set<string>();
+  /** 토큰을 새로 받아 다시 붙어 본 시각 (채널별) */
+  private retriedAt = new Map<string, number>();
   private uid: string | null = null;
   private nickname = "";
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -281,6 +285,7 @@ export class ChatCollector {
           this.statuses.set(channelId, status);
           this.opts.onStatus(channelId, status, detail);
         },
+        onSendBlinded: () => void this.refreshToken(channelId, chatChannelId),
       });
       this.chats.set(channelId, chat);
       this.chatChannelIds.set(channelId, chatChannelId);
@@ -296,6 +301,31 @@ export class ChatCollector {
     } finally {
       this.busy.delete(channelId);
     }
+  }
+
+  /**
+   * 보낸 채팅이 곧바로 가려졌을 때 접속 토큰을 새로 받아 다시 붙는다.
+   *
+   * 같은 계정으로 치지직 웹을 함께 켜 두면 나중에 접속한 쪽이 채팅
+   * 토큰을 가져가고, 남은 쪽이 보낸 채팅은 접수만 된 뒤 가려진다.
+   * 다시 받아 붙으면 이쪽이 유효한 세션이 된다.
+   *
+   * 정말로 채팅 제한에 걸린 경우에는 다시 붙어도 마찬가지라, 한 번
+   * 시도한 채널은 한동안 더 시도하지 않는다.
+   */
+  private async refreshToken(
+    channelId: string,
+    chatChannelId: string,
+  ): Promise<void> {
+    const last = this.retriedAt.get(channelId) ?? 0;
+    if (Date.now() - last < TOKEN_RETRY_MS) return;
+    this.retriedAt.set(channelId, Date.now());
+    this.opts.onError(
+      channelId,
+      "치지직 웹을 함께 켜 두면 나중에 접속한 쪽만 채팅이 나갑니다." +
+        " 접속을 새로 맺어 봅니다…",
+    );
+    await this.connect(channelId, chatChannelId);
   }
 
   private async disconnect(channelId: string): Promise<void> {
