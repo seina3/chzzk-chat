@@ -104,7 +104,7 @@ const collector = new ChatCollector({
   },
   onStatus: (channelId) => {
     renderPaneStatus(channelId);
-    renderChannelList();
+    queueChannelList();
   },
   onLive: (channelId, live, justStarted) => {
     panes.get(channelId)?.dash.update(live);
@@ -117,7 +117,7 @@ const collector = new ChatCollector({
         .get(channelId)
         ?.chat.addSystem(`🔴 방송이 시작되었습니다: ${live.liveTitle}`);
     }
-    renderChannelList();
+    queueChannelList();
   },
   onLogPower: (channelId, value) => {
     // 값이 달라졌을 때만 기록하고, 늘었으면 창에 알려 준다
@@ -181,10 +181,27 @@ function orderedChannels(): SavedChannel[] {
  * 폴더를 먼저 늘어놓고 (접혀 있으면 머리글만), 어느 폴더에도 넣지 않은
  * 채널을 그 아래에 둔다. 정렬 방식은 묶음 안에서 그대로 적용된다.
  */
+let listRenderQueued = false;
+
+/**
+ * 채널 소식은 한 번 확인할 때 채널마다 하나씩 들어온다.
+ * 그때마다 목록을 새로 그리면 스크롤이 흔들리므로 한 프레임에 한 번만 그린다.
+ */
+function queueChannelList(): void {
+  if (listRenderQueued) return;
+  listRenderQueued = true;
+  requestAnimationFrame(() => {
+    listRenderQueued = false;
+    renderChannelList();
+  });
+}
+
 function renderChannelList(): void {
   const listEl = document.getElementById("channel-list")!;
   const order = getSettings().channelOrder;
   const folders = getSettings().folders;
+  // 통째로 다시 그리면 맨 위로 튀어 오른다 — 보던 자리를 지켜 준다
+  const keepScroll = listEl.scrollTop;
   listEl.innerHTML = "";
 
   const known = new Set(folders.map((f) => f.id));
@@ -235,6 +252,8 @@ function renderChannelList(): void {
     out.textContent = "폴더 밖으로 빼기";
     listEl.appendChild(out);
   }
+
+  listEl.scrollTop = keepScroll;
 }
 
 function folderRow(folder: ChannelFolder, count: number): HTMLElement {
