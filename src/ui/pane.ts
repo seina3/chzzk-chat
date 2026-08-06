@@ -79,6 +79,9 @@ export class ChannelPane {
     this.staffBtn = pick<HTMLButtonElement>("pane-staff");
     this.dockBtn = pick<HTMLButtonElement>("pane-dock");
     this.dockBtn.classList.toggle("hidden", !floating);
+    if (floating) {
+      pick<HTMLButtonElement>("pane-close").title = "이 창 닫기 (Esc)";
+    }
 
     this.dash = new Dashboard(pick("pane-head"));
     this.chat = new ChatView(

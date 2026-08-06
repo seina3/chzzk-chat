@@ -2573,10 +2573,34 @@ function initWebviewBehavior(): void {
         toggleSidebar();
       } else if (e.key === "F5" || (ctrl && e.key.toLowerCase() === "r")) {
         e.preventDefault(); // 새로 고침 — 수집이 끊기므로 막는다
+      } else if (e.key === "Escape") {
+        closeTopPopup(e);
       }
     },
     true,
   );
+}
+
+/**
+ * Esc로 띄워 둔 채팅창을 닫는다.
+ * 지금 보고 있는 창이 팝업이면 그것을, 아니면 가장 나중에 띄운 것을 닫는다.
+ * 설정 창이나 우클릭 메뉴가 열려 있으면 그쪽이 먼저 닫혀야 한다.
+ */
+function closeTopPopup(e: KeyboardEvent): void {
+  if (document.querySelector("dialog[open]")) return;
+  const menu = document.querySelector(".context-menu:not(.hidden)");
+  if (menu) {
+    menu.classList.add("hidden");
+    return;
+  }
+  const focused = focusedChannelId ? panes.get(focusedChannelId) : null;
+  const target = focused?.floating
+    ? focusedChannelId
+    : ([...panes.entries()].reverse().find(([, p]) => p.floating)?.[0] ?? null);
+  if (!target) return;
+  e.preventDefault();
+  e.stopPropagation();
+  closePane(target, true);
 }
 
 // ---------- 사이드바 접기 ----------
