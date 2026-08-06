@@ -183,23 +183,72 @@ function orderedChannels(): SavedChannel[] {
  */
 let listRenderQueued = false;
 
+/** 목록에 실제로 그려지는 것들 — 이게 그대로면 다시 그릴 이유가 없다 */
+function channelListSignature(): string {
+  const s = getSettings();
+  return JSON.stringify([
+    s.channelOrder,
+    s.folders.map((f) => [f.id, f.name, f.collapsed, f.color ?? ""]),
+    orderedChannels().map((c) => [
+      c.channelId,
+      displayName(c),
+      c.imageUrl ?? "",
+      c.folderId ?? "",
+      collector.isLive(c.channelId),
+      collector.getStatus(c.channelId),
+      panes.has(c.channelId),
+    ]),
+  ]);
+}
+
+/** 마우스가 목록 위에 있는 동안은 갈아 끼우지 않는다 (커서 아래가 깜빡인다) */
+let listHovered = false;
+/** 미뤄 둔 갱신이 있는지 */
+let listDirty = false;
+
+function initChannelListHover(): void {
+  const listEl = document.getElementById("channel-list")!;
+  listEl.addEventListener("mouseenter", () => {
+    listHovered = true;
+  });
+  const leave = () => {
+    listHovered = false;
+    if (listDirty) renderChannelList();
+  };
+  listEl.addEventListener("mouseleave", leave);
+  // 목록 위에 커서를 둔 채 창을 떠나면 mouseleave가 오지 않아 갱신이 멈춘다
+  window.addEventListener("blur", leave);
+}
+
 /**
- * 채널 소식은 한 번 확인할 때 채널마다 하나씩 들어온다.
- * 그때마다 목록을 새로 그리면 스크롤이 흔들리므로 한 프레임에 한 번만 그린다.
+ * 방송·접속 소식은 한 번 확인할 때 채널마다 하나씩 들어온다.
+ * 그때마다 목록을 통째로 새로 그리면 스크롤이 흔들리고, 커서 아래의 줄이
+ * 사라졌다 다시 생겨 깜빡인다. 그래서 세 겹으로 걸러 낸다:
+ * 한 프레임에 한 번만, 실제로 달라졌을 때만, 마우스가 비켜난 뒤에만.
  */
 function queueChannelList(): void {
   if (listRenderQueued) return;
   listRenderQueued = true;
   requestAnimationFrame(() => {
     listRenderQueued = false;
+    if (channelListSignature() === listSignature) return;
+    if (listHovered) {
+      listDirty = true;
+      return;
+    }
     renderChannelList();
   });
 }
+
+/** 마지막으로 그린 내용 */
+let listSignature = "";
 
 function renderChannelList(): void {
   const listEl = document.getElementById("channel-list")!;
   const order = getSettings().channelOrder;
   const folders = getSettings().folders;
+  listSignature = channelListSignature();
+  listDirty = false;
   // 통째로 다시 그리면 맨 위로 튀어 오른다 — 보던 자리를 지켜 준다
   const keepScroll = listEl.scrollTop;
   listEl.innerHTML = "";
@@ -2644,6 +2693,7 @@ async function main(): Promise<void> {
   initWebviewBehavior();
   initChannelMenu();
   initChannelOrder();
+  initChannelListHover();
   initFolders();
   initFolderColorDialog();
   initSidebarToggle();
