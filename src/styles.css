@@ -625,6 +625,13 @@ button:disabled {
 #panes.layout-columns {
   flex-direction: row;
   overflow-y: hidden;
+  /* 옆으로 넘길 때 창 경계에 맞춰 서게 한다 — 반쯤 걸친 채로 멈추면
+     채팅창이 밀려난 것처럼 보인다 */
+  scroll-snap-type: x proximity;
+}
+
+#panes.layout-columns .pane {
+  scroll-snap-align: start;
 }
 
 /* 가로분할 — 창을 위아래로 쌓는다 */
@@ -948,6 +955,9 @@ button:disabled {
   overflow-y: auto;
   padding: 8px 10px;
   overflow-wrap: anywhere;
+  /* 채팅을 끝까지 굴린 뒤에도 계속 굴리면 그 힘이 바깥으로 넘어가
+     창 전체가 옆으로 밀려났다 — 여기서 멈춘다 */
+  overscroll-behavior: contain;
 }
 
 .msg {
