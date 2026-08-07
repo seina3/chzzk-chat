@@ -339,6 +339,89 @@ export async function searchMessages(
   );
 }
 
+/** 여러 채널에 모두 채팅한 적이 있는 시청자 */
+export interface CommonViewer {
+  user_id_hash: string;
+  nickname: string;
+  /** 고른 채널들에서의 채팅 수 합계 */
+  total: number;
+  last_seen: number;
+  /** 채널별 채팅 수 */
+  per_channel: { channel_id: string; cnt: number }[];
+}
+
+/**
+ * 고른 채널 "모두"에 채팅한 적이 있는 시청자를 찾는다.
+ * 채널 수는 둘이든 넷이든 상관없다 — 고른 만큼 모두 만족해야 나온다.
+ *
+ * 익명 후원은 보낸 사람을 구분할 수 없어 뺀다.
+ */
+export async function findCommonViewers(
+  channelIds: string[],
+  opts: { nickname?: string; limit?: number } = {},
+): Promise<CommonViewer[]> {
+  const ids = [...new Set(channelIds)].filter(Boolean);
+  if (ids.length < 2) return [];
+  const limit = opts.limit ?? 200;
+  const holes = ids.map((_, i) => `$${i + 1}`).join(", ");
+  const params: unknown[] = [...ids, ids.length];
+  let nickWhere = "";
+  if (opts.nickname) {
+    params.push(`%${opts.nickname}%`);
+    nickWhere = ` AND m.user_id_hash IN (SELECT user_id_hash FROM messages
+                   WHERE nickname LIKE $${params.length})`;
+  }
+  params.push(limit);
+
+  // 1단계: 고른 채널을 빠짐없이 거친 사람만 추린다
+  const found = await requireDb().select<
+    { user_id_hash: string; nickname: string; total: number; last_seen: number }[]
+  >(
+    `SELECT m.user_id_hash,
+            ${LATEST_NICKNAME} AS nickname,
+            COUNT(*) AS total,
+            MAX(m.msg_time) AS last_seen
+     FROM messages m
+     WHERE m.channel_id IN (${holes})
+       AND m.user_id_hash != 'anonymous'${nickWhere}
+     GROUP BY m.user_id_hash
+     HAVING COUNT(DISTINCT m.channel_id) = $${ids.length + 1}
+     ORDER BY total DESC
+     LIMIT $${params.length}`,
+    params,
+  );
+  if (found.length === 0) return [];
+
+  // 2단계: 추려진 사람들의 채널별 채팅 수
+  const uids = found.map((r) => r.user_id_hash);
+  const uidHoles = uids.map((_, i) => `$${i + 1}`).join(", ");
+  const chHoles = ids.map((_, i) => `$${uids.length + i + 1}`).join(", ");
+  const counts = await requireDb().select<
+    { user_id_hash: string; channel_id: string; cnt: number }[]
+  >(
+    `SELECT user_id_hash, channel_id, COUNT(*) AS cnt
+     FROM messages
+     WHERE user_id_hash IN (${uidHoles}) AND channel_id IN (${chHoles})
+     GROUP BY user_id_hash, channel_id`,
+    [...uids, ...ids],
+  );
+
+  const byUser = new Map<string, { channel_id: string; cnt: number }[]>();
+  for (const row of counts) {
+    const list = byUser.get(row.user_id_hash);
+    if (list) list.push(row);
+    else byUser.set(row.user_id_hash, [row]);
+  }
+  // 고른 차례대로 보여 줘야 채널끼리 견주기 쉽다
+  return found.map((r) => ({
+    ...r,
+    per_channel: ids.map((id) => ({
+      channel_id: id,
+      cnt: byUser.get(r.user_id_hash)?.find((c) => c.channel_id === id)?.cnt ?? 0,
+    })),
+  }));
+}
+
 // ---------- 후원 집계 ----------
 
 export interface DonationFilter {

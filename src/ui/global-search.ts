@@ -1,4 +1,5 @@
 import {
+  findCommonViewers,
   getChannelsWithData,
   getStreamerMessages,
   searchMessages,
@@ -23,7 +24,7 @@ import {
   roleRowClass,
 } from "./render";
 
-type SearchMode = "user" | "chat" | "streamer";
+type SearchMode = "user" | "chat" | "streamer" | "common";
 
 /**
  * 전체 검색 모달.
@@ -38,7 +39,12 @@ export class GlobalSearchModal {
   private tabUser: HTMLButtonElement;
   private tabChat: HTMLButtonElement;
   private tabStreamer: HTMLButtonElement;
+  private tabCommon: HTMLButtonElement;
   private channelSel: HTMLSelectElement;
+  private commonBox: HTMLElement;
+  private commonAdd: HTMLSelectElement;
+  /** «겹치는 시청자»에서 고른 채널 (고른 차례대로) */
+  private picked: string[] = [];
 
   private mode: SearchMode = "user";
   private oldestLoaded: number | undefined;
@@ -56,6 +62,11 @@ export class GlobalSearchModal {
     this.tabStreamer = document.getElementById(
       "search-tab-streamer",
     ) as HTMLButtonElement;
+    this.tabCommon = document.getElementById(
+      "search-tab-common",
+    ) as HTMLButtonElement;
+    this.commonBox = document.getElementById("common-picker")!;
+    this.commonAdd = document.getElementById("common-add") as HTMLSelectElement;
     this.channelSel = document.getElementById(
       "search-channel",
     ) as HTMLSelectElement;
@@ -66,6 +77,29 @@ export class GlobalSearchModal {
     this.tabUser.addEventListener("click", () => this.setMode("user"));
     this.tabChat.addEventListener("click", () => this.setMode("chat"));
     this.tabStreamer.addEventListener("click", () => this.setMode("streamer"));
+    this.tabCommon.addEventListener("click", () => this.setMode("common"));
+
+    this.commonAdd.addEventListener("change", () => {
+      const id = this.commonAdd.value;
+      this.commonAdd.value = "";
+      if (!id || this.picked.includes(id)) return;
+      this.picked.push(id);
+      this.renderPicked();
+      void this.reload();
+    });
+    document.getElementById("common-clear")!.addEventListener("click", () => {
+      this.picked = [];
+      this.renderPicked();
+      void this.reload();
+    });
+    document.getElementById("common-picked")!.addEventListener("click", (e) => {
+      const id = (e.target as HTMLElement).closest<HTMLElement>("[data-drop]")
+        ?.dataset.drop;
+      if (!id) return;
+      this.picked = this.picked.filter((c) => c !== id);
+      this.renderPicked();
+      void this.reload();
+    });
     this.channelSel.addEventListener("change", () => void this.reload());
     this.input.addEventListener("input", () => {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
@@ -85,7 +119,13 @@ export class GlobalSearchModal {
     this.dialog.showModal();
     this.input.focus();
     void this.fillChannels();
-    if (this.mode === "streamer" || this.input.value.trim()) void this.reload();
+    if (
+      this.mode === "streamer" ||
+      this.mode === "common" ||
+      this.input.value.trim()
+    ) {
+      void this.reload();
+    }
   }
 
   /** 스트리머 모아보기에서 쓸 채널 목록 (기록만 남은 채널까지) */
@@ -96,15 +136,26 @@ export class GlobalSearchModal {
     const ids = [...new Set([...registered, ...withData])];
     await resolveUnknownChannelNames(ids).catch(() => false);
     this.channelSel.innerHTML = `<option value="">전체 채널</option>`;
-    for (const id of [...ids].sort((a, b) =>
+    const sorted = [...ids].sort((a, b) =>
       channelName(a).localeCompare(channelName(b), "ko"),
-    )) {
+    );
+    for (const id of sorted) {
       const opt = document.createElement("option");
       opt.value = id;
       opt.textContent = channelName(id);
       this.channelSel.appendChild(opt);
     }
     this.channelSel.value = current;
+
+    // «겹치는 시청자»의 채널 추가 칸도 같은 목록을 쓴다
+    this.commonAdd.innerHTML = `<option value="">채널 추가…</option>`;
+    for (const id of sorted) {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = channelName(id);
+      this.commonAdd.appendChild(opt);
+    }
+    this.renderPicked();
   }
 
   private setMode(mode: SearchMode): void {
@@ -112,14 +163,21 @@ export class GlobalSearchModal {
     this.tabUser.classList.toggle("active", mode === "user");
     this.tabChat.classList.toggle("active", mode === "chat");
     this.tabStreamer.classList.toggle("active", mode === "streamer");
+    this.tabCommon.classList.toggle("active", mode === "common");
     // 채널별로 좁혀 보는 것은 채팅 검색·스트리머 모아보기 둘 다 쓸모가 있다
-    this.channelSel.classList.toggle("hidden", mode === "user");
+    this.channelSel.classList.toggle(
+      "hidden",
+      mode === "user" || mode === "common",
+    );
+    this.commonBox.classList.toggle("hidden", mode !== "common");
     this.input.placeholder =
       mode === "user"
         ? "닉네임 또는 유저 ID 검색… (과거 닉네임 포함)"
         : mode === "chat"
           ? "채팅 내용 검색…"
-          : "스트리머 채팅 안에서 검색… (비워 두면 전체)";
+          : mode === "common"
+            ? "닉네임으로 좁히기… (비워 두면 전체)"
+            : "스트리머 채팅 안에서 검색… (비워 두면 전체)";
     void this.reload();
   }
 
@@ -131,6 +189,10 @@ export class GlobalSearchModal {
     this.resultsEl.innerHTML = "";
     this.oldestLoaded = undefined;
     this.moreBtn.classList.add("hidden");
+    if (this.mode === "common") {
+      await this.loadCommon();
+      return;
+    }
     if (this.mode !== "streamer" && !this.query()) return;
     if (this.mode === "user") {
       await this.loadUsers();
@@ -144,6 +206,59 @@ export class GlobalSearchModal {
     el.className = "history-empty";
     el.textContent = text;
     this.resultsEl.appendChild(el);
+  }
+
+  /** 고른 채널을 지운 버튼과 함께 늘어놓는다 */
+  private renderPicked(): void {
+    const box = document.getElementById("common-picked")!;
+    box.innerHTML = this.picked
+      .map(
+        (id) =>
+          `<span class="chip">${escapeHtml(channelName(id))}` +
+          `<button type="button" data-drop="${escapeHtml(id)}" aria-label="빼기">×</button>` +
+          `</span>`,
+      )
+      .join("");
+  }
+
+  /** 고른 채널 모두에 채팅한 적이 있는 사람들 */
+  private async loadCommon(): Promise<void> {
+    if (this.picked.length < 2) {
+      this.empty("채널을 두 개 이상 고르면, 그 채널에 모두 채팅한 시청자를 찾아 줍니다.");
+      return;
+    }
+    const picked = [...this.picked];
+    const q = this.query();
+    const rows = await findCommonViewers(picked, { nickname: q || undefined });
+    if (this.mode !== "common" || this.picked.join() !== picked.join()) return;
+    if (rows.length === 0) {
+      this.empty("고른 채널에 모두 채팅한 시청자가 없습니다.");
+      return;
+    }
+
+    const head = document.createElement("div");
+    head.className = "common-head";
+    head.textContent = `${picked.length}개 채널 모두 참여 · ${formatNumber(rows.length)}명`;
+    this.resultsEl.appendChild(head);
+
+    for (const row of rows) {
+      const el = document.createElement("div");
+      el.className = "search-user";
+      el.dataset.uid = row.user_id_hash;
+      el.dataset.nick = row.nickname;
+      const per = row.per_channel
+        .map(
+          (c) =>
+            `<span class="chip-count">${escapeHtml(channelName(c.channel_id))}` +
+            `<b>${formatNumber(c.cnt)}</b></span>`,
+        )
+        .join("");
+      el.innerHTML =
+        `<span class="nick" style="color:${nickColor(row.user_id_hash)}">${escapeHtml(row.nickname)}</span>` +
+        `<span class="common-counts">${per}</span>` +
+        `<span class="search-user-meta">합계 ${formatNumber(row.total)}개 · 마지막 활동 ${formatDateTime(row.last_seen)}</span>`;
+      this.resultsEl.appendChild(el);
+    }
   }
 
   private async loadUsers(): Promise<void> {
