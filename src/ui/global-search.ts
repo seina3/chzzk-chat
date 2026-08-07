@@ -42,7 +42,9 @@ export class GlobalSearchModal {
   private tabCommon: HTMLButtonElement;
   private channelSel: HTMLSelectElement;
   private commonBox: HTMLElement;
-  private commonAdd: HTMLSelectElement;
+  private commonFind: HTMLInputElement;
+  /** 고를 수 있는 채널 전부 (이름순) */
+  private allChannels: string[] = [];
   /** «겹치는 시청자»에서 고른 채널 (고른 차례대로) */
   private picked: string[] = [];
 
@@ -66,7 +68,7 @@ export class GlobalSearchModal {
       "search-tab-common",
     ) as HTMLButtonElement;
     this.commonBox = document.getElementById("common-picker")!;
-    this.commonAdd = document.getElementById("common-add") as HTMLSelectElement;
+    this.commonFind = document.getElementById("common-find") as HTMLInputElement;
     this.channelSel = document.getElementById(
       "search-channel",
     ) as HTMLSelectElement;
@@ -79,16 +81,19 @@ export class GlobalSearchModal {
     this.tabStreamer.addEventListener("click", () => this.setMode("streamer"));
     this.tabCommon.addEventListener("click", () => this.setMode("common"));
 
-    this.commonAdd.addEventListener("change", () => {
-      const id = this.commonAdd.value;
-      this.commonAdd.value = "";
+    this.commonFind.addEventListener("input", () => this.renderPickList());
+    document.getElementById("common-list")!.addEventListener("click", (e) => {
+      const id = (e.target as HTMLElement).closest<HTMLElement>("[data-pick]")
+        ?.dataset.pick;
       if (!id || this.picked.includes(id)) return;
       this.picked.push(id);
+      this.commonFind.value = "";
       this.renderPicked();
       void this.reload();
     });
     document.getElementById("common-clear")!.addEventListener("click", () => {
       this.picked = [];
+      this.commonFind.value = "";
       this.renderPicked();
       void this.reload();
     });
@@ -147,14 +152,8 @@ export class GlobalSearchModal {
     }
     this.channelSel.value = current;
 
-    // «겹치는 시청자»의 채널 추가 칸도 같은 목록을 쓴다
-    this.commonAdd.innerHTML = `<option value="">채널 추가…</option>`;
-    for (const id of sorted) {
-      const opt = document.createElement("option");
-      opt.value = id;
-      opt.textContent = channelName(id);
-      this.commonAdd.appendChild(opt);
-    }
+    // «겹치는 시청자»의 고를 목록도 같은 채널들을 쓴다
+    this.allChannels = sorted;
     this.renderPicked();
   }
 
@@ -217,6 +216,36 @@ export class GlobalSearchModal {
           `<span class="chip">${escapeHtml(channelName(id))}` +
           `<button type="button" data-drop="${escapeHtml(id)}" aria-label="빼기">×</button>` +
           `</span>`,
+      )
+      .join("");
+    this.renderPickList();
+  }
+
+  /**
+   * 더할 수 있는 채널 목록.
+   *
+   * 채널이 수십 개면 운영체제가 그리는 목록 상자가 창 밖으로 흘러 잘렸다.
+   * 그래서 창 안에서 스스로 굴러가는 목록으로 두고, 이름으로 걸러 찾는다.
+   */
+  private renderPickList(): void {
+    const listEl = document.getElementById("common-list")!;
+    const q = this.commonFind.value.trim().toLowerCase();
+    const rest = this.allChannels.filter(
+      (id) =>
+        !this.picked.includes(id) &&
+        (!q || channelName(id).toLowerCase().includes(q)),
+    );
+    if (rest.length === 0) {
+      listEl.innerHTML = `<div class="pick-empty">${
+        q ? "찾는 채널이 없습니다." : "더 고를 채널이 없습니다."
+      }</div>`;
+      return;
+    }
+    listEl.innerHTML = rest
+      .map(
+        (id) =>
+          `<button type="button" class="pick-item" data-pick="${escapeHtml(id)}">` +
+          `${escapeHtml(channelName(id))}</button>`,
       )
       .join("");
   }

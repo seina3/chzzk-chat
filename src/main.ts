@@ -1377,19 +1377,28 @@ const paneScroller = edgeScroller(panesEl, "both", 90, 18);
 /**
  * 세로분할일 때 휠로 창 사이를 넘겨본다.
  *
- * 채팅 위에서는 세로로 굴리는 것이 먼저라 그대로 두고, 머리글·상태줄·
- * 입력칸·창 사이 빈 곳에서 굴리면 옆으로 넘어간다. Shift를 누르면
- * 채팅 위에서도 넘어간다.
+ * 좌우로 굴리면 어디에 커서가 있든 — 채팅 한가운데라도 — 옆 창으로
+ * 넘어간다. 위아래로 굴리는 것은 채팅 위에서는 채팅 몫이고, 그 밖의
+ * 자리(머리글·상태줄·입력칸·창 사이)에서는 옆으로 넘긴다.
+ * Shift를 누르면 채팅 위에서도 위아래 휠로 넘어간다.
  */
 function initPaneWheel(): void {
   panesEl.addEventListener(
     "wheel",
     (e) => {
-      if (getSettings().paneLayout !== "columns") return;
-      if (e.deltaY === 0 || e.ctrlKey) return;
+      if (getSettings().paneLayout !== "columns" || e.ctrlKey) return;
+      if (panesEl.scrollWidth <= panesEl.clientWidth + 1) return;
+
+      // 좌우 휠(틸트·터치패드)은 자리를 가리지 않는다
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        e.preventDefault();
+        panesEl.scrollLeft += e.deltaX;
+        return;
+      }
+
+      if (e.deltaY === 0) return;
       const overLog = (e.target as HTMLElement).closest(".pane-messages");
       if (overLog && !e.shiftKey) return;
-      if (panesEl.scrollWidth <= panesEl.clientWidth + 1) return;
       e.preventDefault();
       panesEl.scrollLeft += e.deltaY;
     },
