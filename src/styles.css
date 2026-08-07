@@ -251,6 +251,29 @@ button:disabled {
   padding: 12px 0 8px;
 }
 
+/* 접어 두어도 «모두닫기»는 남긴다 — 창을 정리하려고 목록을 다시
+   펼쳐야 한다면 접어 둔 보람이 없다 */
+#sidebar.collapsed #pane-layout {
+  display: flex;
+  padding: 6px 0 2px;
+}
+
+#sidebar.collapsed #pane-layout button[data-layout],
+#sidebar.collapsed #pane-layout .sep,
+#sidebar.collapsed #close-all-panes .lbl {
+  display: none;
+}
+
+/* 펼쳐 둔 평소에는 글자만, 접었을 때는 아이콘만 */
+#close-all-panes .ico {
+  display: none;
+}
+
+#sidebar.collapsed #close-all-panes .ico {
+  display: inline;
+  font-size: 13px;
+}
+
 #sidebar.collapsed .channel {
   justify-content: center;
   padding: 7px 4px;
