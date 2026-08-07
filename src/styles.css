@@ -518,17 +518,20 @@ button:disabled {
 }
 
 /* 폴더 안의 채널은 왼쪽에 세로줄을 둬 어디까지가 이 폴더인지 보이게 한다 */
+/* 묶는 일은 폴더 막대 하나가 맡는다 — 채널마다 선을 또 긋지 않는다 */
 .channel.nested {
-  margin-left: 4px;
-  padding-left: 12px;
-  border-left: 2px solid
-    color-mix(in srgb, var(--folder-color, var(--border)) 70%, var(--border));
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin-left: 0;
 }
 
-.channel.nested:hover,
-.channel.nested.active {
-  border-left-color: var(--folder-color, color-mix(in srgb, var(--accent) 55%, var(--border)));
+/*
+ * 폴더 안에서 열려 있는 채널은 제 자리에 선을 하나 더 긋는 대신,
+ * 폴더 막대의 그 구간을 강조색으로 덮는다. 선은 계속 하나뿐이다.
+ */
+.channel.nested.active::before {
+  left: -9px;
+  top: 4px;
+  bottom: 4px;
+  width: 1.5px;
 }
 
 /* 끌고 있는 동안에만 나오는 "폴더 밖으로 빼기" 자리 */
@@ -551,10 +554,6 @@ button:disabled {
   border-color: var(--accent);
   border-style: solid;
   color: var(--text);
-}
-
-.channel.nested.drop-target {
-  border-left-color: var(--accent);
 }
 
 /* 접힌 사이드바에서는 폴더도 화살표만 남긴다 —
@@ -584,6 +583,12 @@ button:disabled {
   margin-left: 0;
   padding-left: 4px;
   border-left: none;
+}
+
+/* 접으면 폴더 막대가 사라지므로 표시를 제자리로 되돌린다 */
+#sidebar.collapsed .channel.nested.active::before {
+  left: 3px;
+  width: 2px;
 }
 
 .channel.active .channel-name {
