@@ -952,12 +952,22 @@ button:disabled {
 
 .pane-messages {
   height: 100%;
+  /* 위아래로만 굴린다. overflow-y만 정하면 가로축은 auto가 되어,
+     긴 이모티콘 줄 하나에 채팅이 옆으로 밀려 잘려 보였다 */
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px 10px;
   overflow-wrap: anywhere;
   /* 채팅을 끝까지 굴린 뒤에도 계속 굴리면 그 힘이 바깥으로 넘어가
      창 전체가 옆으로 밀려났다 — 여기서 멈춘다 */
   overscroll-behavior: contain;
+}
+
+/* 가로로 잘리지 않도록 줄 안의 내용도 넘치면 접히게 둔다 */
+.msg .content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .msg {
@@ -1230,25 +1240,43 @@ button:disabled {
   bottom: 14px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--accent);
+  background: linear-gradient(180deg, #17efb0, var(--accent));
   color: #04281d;
   border: none;
   border-radius: 999px;
-  padding: 6px 16px;
+  padding: 7px 16px;
   font-weight: 700;
   font-size: 12px;
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+  letter-spacing: -0.1px;
+  box-shadow:
+    0 6px 16px rgb(0 0 0 / 0.45),
+    inset 0 0 0 1px rgb(255 255 255 / 0.14);
+  transition:
+    transform 0.14s var(--ease),
+    box-shadow 0.14s var(--ease),
+    filter 0.14s var(--ease);
 }
 
-.pane-scroll:hover {
-  background: #14f0b0;
+/* 공통 버튼 hover(회색 배경)가 이겨 버려 검게 보였다.
+   .pane-chat을 앞에 붙여 이쪽이 이기게 하고, 살짝 떠오르게만 한다. */
+.pane-chat .pane-scroll:hover:not(:disabled) {
+  background: linear-gradient(180deg, #26ffc2, #06e7a6);
+  border-color: transparent;
+  filter: saturate(1.05);
+  transform: translateX(-50%) translateY(-1px);
+  box-shadow:
+    0 10px 22px rgb(0 230 161 / 0.3),
+    inset 0 0 0 1px rgb(255 255 255 / 0.22);
 }
 
 /* 누를 때 눌리는 시늉(translateY)이 가운데 정렬(translateX)을 지워
    버튼이 오른쪽으로 튀었다. 그 자리에서 손을 떼면 클릭이 되지 않아
    최신 채팅으로 넘어가지 않았다 — 두 이동을 함께 준다. */
-.pane-scroll:active:not(:disabled) {
+.pane-chat .pane-scroll:active:not(:disabled) {
   transform: translateX(-50%) translateY(1px);
+  box-shadow:
+    0 3px 10px rgb(0 0 0 / 0.4),
+    inset 0 0 0 1px rgb(255 255 255 / 0.14);
 }
 
 /* 상태바 + 입력 */
