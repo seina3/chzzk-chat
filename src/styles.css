@@ -354,19 +354,19 @@ button:disabled {
   position: relative;
 }
 
+/*
+ * 채팅창을 열어 둔 채널.
+ * 왼쪽에 선을 그으면 폴더 막대와 부딪혀 색이 끊겨 보이므로,
+ * 프로필 사진에 얇은 테를 둘러 알린다.
+ */
 .channel.active {
   background: #171d22;
 }
 
-.channel.active::before {
-  content: "";
-  position: absolute;
-  left: 3px;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--accent);
+.channel.active img,
+.channel.active .channel-noimg {
+  outline: 1.5px solid color-mix(in srgb, var(--accent) 75%, transparent);
+  outline-offset: 2px;
 }
 
 /* 드래그로 순서 바꾸기 — 프로필 사진이 대신 끌려가지 않도록 막는다 */
@@ -523,15 +523,9 @@ button:disabled {
   margin-left: 0;
 }
 
-/*
- * 폴더 안에서 열려 있는 채널은 제 자리에 선을 하나 더 긋는 대신,
- * 폴더 막대의 그 구간을 강조색으로 덮는다. 선은 계속 하나뿐이다.
- */
-.channel.nested.active::before {
-  left: -9px;
-  top: 4px;
-  bottom: 4px;
-  width: 1.5px;
+/* 접힌 사이드바는 사진만 남으므로 테가 곧 표시가 된다 */
+#sidebar.collapsed .channel.active {
+  background: none;
 }
 
 /* 끌고 있는 동안에만 나오는 "폴더 밖으로 빼기" 자리 */
@@ -583,12 +577,6 @@ button:disabled {
   margin-left: 0;
   padding-left: 4px;
   border-left: none;
-}
-
-/* 접으면 폴더 막대가 사라지므로 표시를 제자리로 되돌린다 */
-#sidebar.collapsed .channel.nested.active::before {
-  left: 3px;
-  width: 2px;
 }
 
 .channel.active .channel-name {
