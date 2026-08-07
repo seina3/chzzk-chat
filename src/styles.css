@@ -1019,8 +1019,9 @@ button:disabled {
   padding: 8px 10px;
   overflow-wrap: anywhere;
   /* 채팅을 끝까지 굴린 뒤에도 계속 굴리면 그 힘이 바깥으로 넘어가
-     창 전체가 옆으로 밀려났다 — 여기서 멈춘다 */
-  overscroll-behavior: contain;
+     창 전체가 옆으로 밀려났다 — 위아래 방향만 여기서 멈춘다.
+     좌우는 창 사이를 넘겨보는 데 쓰이므로 통과시킨다. */
+  overscroll-behavior-y: contain;
 }
 
 /* 가로로 잘리지 않도록 줄 안의 내용도 넘치면 접히게 둔다 */

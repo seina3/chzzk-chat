@@ -1374,6 +1374,29 @@ function edgeScroller(
 
 const paneScroller = edgeScroller(panesEl, "both", 90, 18);
 
+/**
+ * 세로분할일 때 휠로 창 사이를 넘겨본다.
+ *
+ * 채팅 위에서는 세로로 굴리는 것이 먼저라 그대로 두고, 머리글·상태줄·
+ * 입력칸·창 사이 빈 곳에서 굴리면 옆으로 넘어간다. Shift를 누르면
+ * 채팅 위에서도 넘어간다.
+ */
+function initPaneWheel(): void {
+  panesEl.addEventListener(
+    "wheel",
+    (e) => {
+      if (getSettings().paneLayout !== "columns") return;
+      if (e.deltaY === 0 || e.ctrlKey) return;
+      const overLog = (e.target as HTMLElement).closest(".pane-messages");
+      if (overLog && !e.shiftKey) return;
+      if (panesEl.scrollWidth <= panesEl.clientWidth + 1) return;
+      e.preventDefault();
+      panesEl.scrollLeft += e.deltaY;
+    },
+    { passive: false },
+  );
+}
+
 /** 사이드바에서 창 영역으로 채널을 끌어다 놓으면 나란히 연다 */
 function initPaneDrop(): void {
   panesEl.addEventListener("dragover", (e) => {
@@ -2698,6 +2721,7 @@ async function main(): Promise<void> {
   initFolderColorDialog();
   initSidebarToggle();
   initPaneDrop();
+  initPaneWheel();
   initPaneReorder();
   initPaneLayout();
   initRefocusScroll();
