@@ -1398,9 +1398,15 @@ function initPaneWheel(): void {
       const dx = e.deltaX;
       const dy = e.deltaY;
       const now = Date.now();
-      // 가로 성분이 조금이라도 있으면 옆으로 미는 것으로 본다.
-      // 터치패드는 손가락이 비뚤어지면 세로 성분이 더 크게 잡히기도 한다.
-      const sideways = dx !== 0 || now < sidewaysUntil;
+      /*
+       * 가로가 세로보다 클 때만 옆으로 민다.
+       * 터치패드는 위아래로 굴릴 때에도 가로 성분이 조금씩 섞여 들어와,
+       * "가로가 조금이라도 있으면"으로 잡으면 세로 스크롤을 통째로
+       * 빼앗아 간다. 대신 한 번 옆으로 밀기 시작하면 잠깐 이어 본다.
+       */
+      const sideways =
+        Math.abs(dx) > Math.abs(dy) ||
+        (dx !== 0 && now < sidewaysUntil);
 
       if (sideways) {
         sidewaysUntil = now + LATCH_MS;

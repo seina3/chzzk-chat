@@ -664,13 +664,11 @@ button:disabled {
 #panes.layout-columns {
   flex-direction: row;
   overflow-y: hidden;
-  /* 옆으로 넘길 때 창 경계에 맞춰 서게 한다 — 반쯤 걸친 채로 멈추면
-     채팅창이 밀려난 것처럼 보인다 */
-  scroll-snap-type: x proximity;
-}
-
-#panes.layout-columns .pane {
-  scroll-snap-align: start;
+  /*
+   * 창 경계에 맞춰 세우는 스냅은 쓰지 않는다.
+   * 조금씩 미는 스크롤이 매번 원래 자리로 되돌려져 아예 움직이지
+   * 않는 것처럼 보였다.
+   */
 }
 
 /* 가로분할 — 창을 위아래로 쌓는다 */
@@ -725,7 +723,33 @@ button:disabled {
 #panes.panning {
   cursor: grabbing;
   user-select: none;
-  scroll-snap-type: none;
+}
+
+/* 창 영역의 가로 스크롤바 — 잡아 끌 자리라 넉넉하고 또렷하게 */
+#panes::-webkit-scrollbar {
+  height: 14px;
+}
+
+#panes::-webkit-scrollbar-thumb {
+  background: #39414b;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+#panes::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 55%, #4a5460);
+  background-clip: content-box;
+}
+
+#panes::-webkit-scrollbar-thumb:active {
+  background: var(--accent);
+  background-clip: content-box;
+}
+
+#panes::-webkit-scrollbar-track {
+  background: rgb(255 255 255 / 0.03);
+  border-radius: 999px;
 }
 
 #panes.drop-here {
