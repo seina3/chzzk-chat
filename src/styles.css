@@ -5,19 +5,19 @@
 }
 
 :root {
-  --bg: #0b0c0f; /* 앱 배경 */
-  --bg-alt: #101216; /* 사이드바 */
-  --bg-card: #14161b; /* 채널 창 */
-  --bg-raised: #1b1e25; /* 입력칸/카드 */
-  --bg-hover: #21242c;
-  --border: #24272f;
-  --border-soft: #1b1e25;
-  --text: #edeef1;
-  --text-dim: #8b909b;
+  --bg: #0a0c0e; /* 앱 배경 */
+  --bg-alt: #0f1215; /* 사이드바 */
+  --bg-card: #14181c; /* 채널 창 */
+  --bg-raised: #1a1f24; /* 입력칸/카드 */
+  --bg-hover: #20262c;
+  --border: #232a31;
+  --border-soft: #1a2026;
+  --text: #e8ecef;
+  --text-dim: #8a949c;
   --accent: #00e6a1; /* 치지직 그린 */
   --accent-dim: #0b8f68;
   --danger: #ff5a52;
-  --streamer: #ffc84d; /* 스트리머 강조 — 노란색 계열 */
+  --streamer: #ffc24d; /* 스트리머 강조 — 노란색 계열 */
   --manager: #5eb7ff; /* 매니저 강조 — 파란색 계열 */
   --radius: 12px;
   --radius-sm: 8px;
@@ -350,13 +350,23 @@ button:disabled {
   background: var(--bg-hover);
 }
 
+.channel {
+  position: relative;
+}
+
 .channel.active {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent) 12%, transparent),
-    var(--bg-hover) 45%
-  );
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: #171d22;
+}
+
+.channel.active::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 
 /* 드래그로 순서 바꾸기 — 프로필 사진이 대신 끌려가지 않도록 막는다 */
@@ -389,9 +399,8 @@ button:disabled {
   object-fit: cover;
 }
 
-.channel.active img {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+.channel.active .channel-name {
+  color: var(--text);
 }
 
 .channel-name {
@@ -404,64 +413,73 @@ button:disabled {
 
 /* ---------- 채널 폴더 ---------- */
 
-/* 머리글과 안에 든 채널을 한 상자로 묶어 경계를 분명히 한다 */
+/* 상자로 두르는 대신, 안에 든 채널을 폴더 색 막대로 묶는다 */
 .folder-group {
-  margin: 6px 0;
-  border: 1px solid
-    color-mix(in srgb, var(--folder-color, var(--border)) 60%, var(--border));
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
-  overflow: hidden;
+  margin: 8px 0 4px;
 }
 
-/* 상자 어디에 놓아도 이 폴더로 들어간다 */
 .folder-group.drop-target {
-  border-color: var(--folder-color, var(--accent));
+  border-radius: var(--radius-sm);
   background: color-mix(
     in srgb,
-    var(--folder-color, var(--accent)) 10%,
+    var(--folder-color, var(--accent)) 8%,
     transparent
   );
 }
 
-.folder-group.collapsed {
-  background: none;
+.folder-items {
+  position: relative;
+  list-style: none;
+  margin-left: 7px;
+  padding: 2px 0 2px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
-.folder-items {
-  list-style: none;
-  padding: 2px 5px 5px;
+.folder-items::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 1.5px;
+  border-radius: 2px;
+  background: color-mix(
+    in srgb,
+    var(--folder-color, #6f7a83) 42%,
+    transparent
+  );
+  pointer-events: none;
 }
 
 /* 폴더 안이 비어 있을 때 — 여기에 놓으면 된다는 안내 */
 .folder-empty {
-  padding: 8px 6px;
+  padding: 7px 6px;
   color: var(--text-dim);
   font-size: 11px;
   text-align: center;
-  opacity: 0.7;
+  opacity: 0.6;
 }
 
 .folder {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 7px 9px;
-  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 1px;
+  padding: 5px 9px 5px 7px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
-  color: var(--folder-color, var(--text-dim));
-  font-size: 11.5px;
+  color: #9aa4ac;
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.02em;
   user-select: none;
 }
 
-.folder-group.collapsed .folder {
-  border-bottom: none;
-}
-
 .folder:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+  background: #161b20;
+  color: #c6cdd3;
 }
 
 .folder.dragging {
@@ -471,16 +489,17 @@ button:disabled {
 .folder.drop-target {
   background: color-mix(
     in srgb,
-    var(--folder-color, var(--accent)) 16%,
+    var(--folder-color, var(--accent)) 14%,
     transparent
   );
-  color: var(--folder-color, var(--text));
+  color: var(--text);
 }
 
 .folder-arrow {
   flex-shrink: 0;
-  font-size: 9px;
-  width: 10px;
+  font-size: 8px;
+  width: 9px;
+  color: color-mix(in srgb, var(--folder-color, #6f7a83) 80%, transparent);
 }
 
 .folder-name {
@@ -492,11 +511,10 @@ button:disabled {
 
 .folder-count {
   flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--bg-raised);
   font-size: 10px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  color: #626c74;
 }
 
 /* 폴더 안의 채널은 왼쪽에 세로줄을 둬 어디까지가 이 폴더인지 보이게 한다 */
@@ -554,7 +572,12 @@ button:disabled {
 }
 
 #sidebar.collapsed .folder-items {
+  margin-left: 0;
   padding: 2px;
+}
+
+#sidebar.collapsed .folder-items::before {
+  display: none;
 }
 
 #sidebar.collapsed .channel.nested {
@@ -564,7 +587,7 @@ button:disabled {
 }
 
 .channel.active .channel-name {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 /* 수집 중 표시 */
@@ -832,22 +855,31 @@ button:disabled {
 }
 
 .pane-live {
-  font-size: 9.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.6px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  color: #626c74;
+  flex-shrink: 0;
+}
+
+.pane-live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
   flex-shrink: 0;
 }
 
 .pane-live.on-air {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
-  box-shadow: 0 0 12px rgb(255 90 82 / 0.35);
+  color: var(--danger);
+}
+
+.pane-live.on-air::before {
+  box-shadow: 0 0 0 3px rgb(255 90 82 / 0.18);
 }
 
 /*
@@ -993,10 +1025,27 @@ button:disabled {
   word-break: break-word;
 }
 
+/*
+ * 시각은 고정 폭 칸, 나머지는 그 오른쪽 한 덩어리.
+ * 긴 채팅이 접혀도 시각 아래로 흘러들지 않는다.
+ */
 .msg {
-  padding: 3px 6px;
-  line-height: 1.65;
+  display: grid;
+  grid-template-columns: 3.2em minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 7px;
+  line-height: 1.6;
   border-radius: var(--radius-sm);
+}
+
+.msg .body {
+  min-width: 0;
+}
+
+/* 앱이 남기는 안내 줄은 칸을 나누지 않고 한 줄로 쓴다 */
+.msg.system {
+  display: block;
 }
 
 .msg:hover {
@@ -1069,17 +1118,15 @@ button:disabled {
 }
 
 .msg .time {
-  color: var(--text-dim);
-  font-size: 11px;
-  margin-right: 7px;
+  color: #616a72;
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
-  opacity: 0.8;
 }
 
 .msg .nick {
   font-weight: 700;
   cursor: pointer;
-  margin-right: 7px;
+  margin-right: 6px;
 }
 
 .msg .nick:hover {
@@ -1088,14 +1135,23 @@ button:disabled {
 
 /* 치지직 구독/시스템 알림 배너 */
 .msg.notice {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 3px 0;
-  padding: 6px 8px;
-  border-radius: 5px;
-  background: color-mix(in srgb, #7d6bd6 14%, transparent);
-  border: 1px solid color-mix(in srgb, #7d6bd6 55%, transparent);
+  margin: 2px 0;
+  padding: 5px 7px;
+  background: none;
+  border: 0;
+}
+
+.msg.notice .body {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 3px var(--radius-sm) var(--radius-sm) 3px;
+  background: color-mix(in srgb, #7d6bd6 9%, var(--bg-raised));
+  box-shadow: inset 2px 0 0 #8f7ce0;
+}
+
+.msg.notice.mod-notice .body {
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-raised));
+  box-shadow: inset 2px 0 0 var(--danger);
 }
 
 .msg.notice .content {
@@ -1103,9 +1159,9 @@ button:disabled {
   color: #cfc6f5;
 }
 
-.msg.notice.subscribe {
-  background: color-mix(in srgb, #d68fb8 14%, transparent);
-  border-color: color-mix(in srgb, #d68fb8 55%, transparent);
+.msg.notice.subscribe .body {
+  background: color-mix(in srgb, #d68fb8 9%, var(--bg-raised));
+  box-shadow: inset 2px 0 0 #d68fb8;
 }
 
 .msg.notice.subscribe .content {
@@ -1184,9 +1240,9 @@ button:disabled {
 .role-streamer,
 .role-manager {
   --role: var(--streamer);
-  background: color-mix(in srgb, var(--role) 12%, transparent);
-  box-shadow: inset 3px 0 0 var(--role);
-  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--role) 6%, transparent);
+  box-shadow: inset 2px 0 0 var(--role);
+  border-radius: 3px var(--radius-sm) var(--radius-sm) 3px;
 }
 
 .role-manager {
@@ -1195,13 +1251,13 @@ button:disabled {
 
 .role-streamer:hover,
 .role-manager:hover {
-  background: color-mix(in srgb, var(--role) 18%, transparent);
+  background: color-mix(in srgb, var(--role) 11%, transparent);
 }
 
-/* 후원은 금액 티어 색이 우선이므로 강조는 왼쪽 선으로만 남긴다 */
+/* 후원은 금액 티어 물결을 그대로 두고, 왼쪽 선만 권한 색으로 바꾼다 */
 .donation.role-streamer,
 .donation.role-manager {
-  background: color-mix(in srgb, var(--tier) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--role);
 }
 
 .badge-img {
@@ -1215,8 +1271,14 @@ button:disabled {
 
 .donation {
   --tier: #78909c;
-  background: color-mix(in srgb, var(--tier) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--tier) 55%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--tier) 22%, transparent),
+    color-mix(in srgb, var(--tier) 5%, transparent)
+  );
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--tier) 85%, white 15%);
+  border-radius: 3px var(--radius-sm) var(--radius-sm) 3px;
+  margin: 2px 0;
 }
 
 /* 금액 구간 색 — 후원 메시지 외(집계 순위표 등)에서도 쓰도록 독립 정의 */

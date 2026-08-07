@@ -2212,7 +2212,7 @@ function initHighlightDialog(): void {
 // ---------- 창 색 ----------
 
 /** 프리셋 배경색 — 앱 기본 창 배경(--bg-card, rgb 20 22 27)과 같게 둔다 */
-const PRESET_BG = "#14161b";
+const PRESET_BG = "#14181c";
 
 /** 미리 준비해 둔 강조색 */
 const PRESET_ACCENTS = [
@@ -2250,7 +2250,7 @@ function openPaneStyle(channelId: string): void {
   (document.getElementById("pane-accent") as HTMLInputElement).value =
     st.accent ?? "#00e6a1";
   (document.getElementById("pane-bg") as HTMLInputElement).value =
-    st.bg ?? "#14161b";
+    st.bg ?? "#14181c";
   (document.getElementById("pane-text") as HTMLInputElement).value =
     st.text ?? "#edeef1";
   const opacity = Math.round((st.opacity ?? 1) * 100);

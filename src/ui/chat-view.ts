@@ -201,8 +201,10 @@ export class ChatView {
             : "msg notice";
       row.innerHTML =
         `<span class="time">${formatTime(m.time)}</span>` +
+        `<span class="body">` +
         `<span class="notice-icon">${m.type === "subscription" ? "🎖️" : "ℹ️"}</span>` +
-        `<span class="content">${renderContent(m.content, m.emojis)}</span>`;
+        `<span class="content">${renderContent(m.content, m.emojis)}</span>` +
+        `</span>`;
       this.append(row);
       return;
     }
@@ -231,8 +233,11 @@ export class ChatView {
           ? `<span class="cheese">🧀 ${m.payAmount.toLocaleString("ko-KR")}</span>`
           : `<span class="cheese cheese-hidden" title="채널 설정으로 금액이 숨겨진 후원입니다">🧀 금액 숨김</span>`;
 
+    // 시각은 고정 폭 칸에 두고 나머지는 한 덩어리로 묶는다.
+    // 긴 채팅이 접혀도 시각 아래로 흘러들지 않아 세로로 곧게 읽힌다.
     row.innerHTML =
       `<span class="time">${formatTime(m.time)}</span>` +
+      `<span class="body">` +
       blindTag +
       donationTag +
       roleBadgeHtml(m.roleCode) +
@@ -241,7 +246,8 @@ export class ChatView {
       `<span class="nick${note ? " noted" : ""}" data-uid="${escapeHtml(m.userIdHash)}"` +
       `${note ? ` title="📝 ${escapeHtml(note)}"` : ""}` +
       ` style="color:${nickColorFor(m.userIdHash, m.roleCode)}">${escapeHtml(m.nickname)}</span>` +
-      `<span class="content">${renderContent(m.content, m.emojis)}</span>`;
+      `<span class="content">${renderContent(m.content, m.emojis)}</span>` +
+      `</span>`;
 
     this.append(row);
   }
@@ -258,7 +264,9 @@ export class ChatView {
         const tag = document.createElement("span");
         tag.className = "blind-tag";
         tag.textContent = kind === "cleanbot" ? "🤖 클린봇" : "🚫 블라인드";
-        row.querySelector(".time")?.after(tag);
+        const body = row.querySelector(".body");
+        if (body) body.prepend(tag);
+        else row.querySelector(".time")?.after(tag);
       }
     }
   }
