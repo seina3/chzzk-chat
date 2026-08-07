@@ -1007,16 +1007,21 @@ button:disabled {
   color: var(--danger) !important;
 }
 
-/* 방송 중이면 눌러서 치지직으로 넘어갈 수 있다 */
-.pane-live.on-air {
+/* 방송 중이든 꺼져 있든 눌러서 치지직 채널로 넘어갈 수 있다 */
+.pane-live {
   cursor: pointer;
 }
 
+.pane-live:hover {
+  color: var(--text);
+}
+
 .pane-live.on-air:hover {
+  color: var(--danger);
   filter: brightness(1.15);
 }
 
-.pane-live.on-air::after {
+.pane-live::after {
   content: " ↗";
   font-size: 8px;
 }

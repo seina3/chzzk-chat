@@ -103,10 +103,10 @@ export class ChannelPane {
       e.stopPropagation();
       cb.onDock(channelId);
     });
-    // 방송 중일 때만 눌러서 치지직으로 넘어간다
+    // 방송 중이든 꺼져 있든 눌러서 치지직 채널로 넘어간다
     this.liveEl.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (this.liveEl.classList.contains("on-air")) cb.onOpenLive(channelId);
+      cb.onOpenLive(channelId);
     });
     this.powerBtn = pick<HTMLButtonElement>("pane-power");
     this.powerValueEl = pick("pane-power-value");
