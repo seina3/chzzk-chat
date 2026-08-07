@@ -39,8 +39,12 @@ export class UserHistoryModal {
   private oldestLoaded: number | undefined;
   private search = "";
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
-  /** 채팅 / 후원 / 제재 기록 / 치지직 프로필 */
-  private mode: "all" | "donation" | "mod" | "profile" = "all";
+  /** 채팅 / 후원 / 제재 기록 */
+  private mode: "all" | "donation" | "mod" = "all";
+  /** 창 위쪽에 붙는 치지직 프로필 (탭과 상관없이 계속 보인다) */
+  private profileEl: HTMLElement;
+  /** 이미 읽어 온 프로필 — 탭을 옮길 때마다 다시 부르지 않는다 */
+  private profileKey = "";
   /** 이 창을 연 채널 — "이 채널만" 범위를 고를 수 있게 기억해 둔다 */
   private originChannelId: string | undefined;
   /** 지금 보고 있는 범위 (정해져 있으면 그 채널만) */
@@ -66,6 +70,7 @@ export class UserHistoryModal {
     this.searchInput = document.getElementById("user-modal-search") as HTMLInputElement;
     this.loadMoreBtn = document.getElementById("user-modal-more") as HTMLButtonElement;
     this.noteBtn = document.getElementById("user-modal-note") as HTMLButtonElement;
+    this.profileEl = document.getElementById("user-modal-profile")!;
 
     document.getElementById("user-modal-close")!.addEventListener("click", () => {
       this.dialog.close();
@@ -81,7 +86,7 @@ export class UserHistoryModal {
       "#user-modal-tabs button",
     )) {
       btn.addEventListener("click", () => {
-        this.mode = btn.dataset.mode as typeof this.mode;
+        this.mode = btn.dataset.mode as "all" | "donation" | "mod";
         void this.refresh();
       });
     }
@@ -121,6 +126,9 @@ export class UserHistoryModal {
     this.searchInput.value = "";
     this.search = "";
     this.mode = donationsOnly ? "donation" : "all";
+    this.profileKey = "";
+    this.profileEl.classList.add("hidden");
+    this.profileEl.innerHTML = "";
     this.dialog.showModal();
     await this.refresh();
   }
@@ -146,11 +154,11 @@ export class UserHistoryModal {
       this.userIdHash === "anonymous" || !this.onEditNote,
     );
     this.syncTabs();
-    this.searchInput.classList.toggle("hidden", this.profileMode);
     this.searchInput.placeholder = this.searchHint();
     this.stats = await getUserStats(this.userIdHash, this.channelId);
     await this.loadBreakdown();
     this.renderStats();
+    void this.loadProfileTop();
     await this.reload();
   }
 
@@ -164,18 +172,6 @@ export class UserHistoryModal {
       : this.mode === "mod"
         ? "제재 기록 검색…"
         : "메시지 내용 검색…";
-  }
-
-  private empty(text: string): void {
-    const el = document.createElement("div");
-    el.className = "history-empty";
-    el.textContent = text;
-    this.listEl.appendChild(el);
-  }
-
-  /** 프로필은 치지직에서 바로 읽어 오는 것이라 검색·범위가 쓰이지 않는다 */
-  private get profileMode(): boolean {
-    return this.mode === "profile";
   }
 
   /**
@@ -195,118 +191,109 @@ export class UserHistoryModal {
     return `${m}개월`;
   }
 
-  /** 치지직에서 이 사람의 프로필을 읽어 보여준다 */
-  private async loadProfileCard(): Promise<void> {
+  /**
+   * 치지직에서 이 사람의 프로필을 읽어 창 위쪽에 붙인다.
+   * 탭을 옮겨도 그대로 남고, 같은 사람·같은 채널이면 다시 부르지 않는다.
+   */
+  private async loadProfileTop(): Promise<void> {
     const channelId = this.profileChannel();
-    if (!this.loadProfile || !channelId) {
-      this.empty("프로필을 읽을 채널을 알 수 없습니다.");
-      return;
-    }
-    if (this.userIdHash === "anonymous") {
-      this.empty("익명 후원은 보낸 사람을 알 수 없어 프로필이 없습니다.");
+    const key = `${this.userIdHash}|${channelId ?? ""}`;
+    if (key === this.profileKey) return;
+    this.profileKey = key;
+
+    if (!this.loadProfile || !channelId || this.userIdHash === "anonymous") {
+      this.profileEl.classList.add("hidden");
+      this.profileEl.innerHTML = "";
       return;
     }
 
-    const loading = document.createElement("div");
-    loading.className = "history-empty";
-    loading.textContent = "치지직에서 불러오는 중…";
-    this.listEl.appendChild(loading);
+    this.profileEl.classList.remove("hidden");
+    this.profileEl.innerHTML =
+      `<div class="pro-strip pro-loading">치지직 프로필을 불러오는 중…</div>`;
 
-    const uid = this.userIdHash;
-    const card = await this.loadProfile(uid, channelId).catch(() => null);
-    if (this.userIdHash !== uid || this.mode !== "profile") return;
-    this.listEl.innerHTML = "";
+    const card = await this.loadProfile(this.userIdHash, channelId).catch(
+      () => null,
+    );
+    if (this.profileKey !== key) return;
     if (!card) {
-      this.empty(
-        "프로필을 불러오지 못했습니다. 네이버 로그인 상태와 방송 여부를 확인해 주세요.",
-      );
+      this.profileEl.classList.add("hidden");
+      this.profileEl.innerHTML = "";
       return;
     }
-    this.renderProfileCard(card, channelId);
+    this.renderProfileTop(card, channelId);
   }
 
-  private renderProfileCard(card: ProfileCard, channelId: string): void {
-    const worn = card.badges
-      .filter((b) => b.activated)
-      .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
-
+  private renderProfileTop(card: ProfileCard, channelId: string): void {
     const face = (url: string | null, title: string) =>
       url
         ? `<img src="${escapeHtml(url)}" alt="" title="${escapeHtml(title)}" loading="lazy">`
         : `<span class="badge-noimg" title="${escapeHtml(title)}">?</span>`;
 
-    const lines: string[] = [];
+    const worn = card.badges
+      .filter((b) => b.activated)
+      .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+
+    const chips: string[] = [];
     if (card.subscription) {
       const s = card.subscription;
       const tier = s.tierName ? ` · ${escapeHtml(s.tierName)}` : "";
-      lines.push(
-        `<div class="pc-line">` +
-          `<span class="pc-ico">${face(s.badgeUrl, s.badgeTitle)}</span>` +
-          `<span><b>${this.monthsLabel(s.months)}</b> 구독 중${tier}</span>` +
-          `</div>`,
+      chips.push(
+        `<span class="pro-chip">` +
+          `<span class="pro-chip-ico">${face(s.badgeUrl, s.badgeTitle)}</span>` +
+          `<b>${this.monthsLabel(s.months)}</b> 구독 중${tier}</span>`,
       );
     }
     if (card.continuousDonationDays > 0) {
-      lines.push(
-        `<div class="pc-line">` +
-          `<span class="pc-ico">🔥</span>` +
-          `<span class="pc-hot"><b>${formatNumber(card.continuousDonationDays)}일째</b> 연속 후원 중</span>` +
-          `</div>`,
+      chips.push(
+        `<span class="pro-chip hot">🔥 <b>${formatNumber(card.continuousDonationDays)}일째</b> 연속 후원</span>`,
       );
     }
     const day = card.followDate?.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (day) {
-      lines.push(
-        `<div class="pc-line">` +
-          `<span class="pc-ico">♥</span>` +
-          `<span>${day[1]}년 ${Number(day[2])}월 ${Number(day[3])}일 부터 팔로우</span>` +
-          `</div>`,
-      );
-    }
-    if (lines.length === 0) {
-      lines.push(
-        `<div class="pc-line"><span class="pc-ico">·</span>` +
-          `<span>구독·팔로우 기록이 없습니다.</span></div>`,
+      chips.push(
+        `<span class="pro-chip">♥ ${day[1]}년 ${Number(day[2])}월 ${Number(day[3])}일 부터 팔로우</span>`,
       );
     }
 
-    const box = document.createElement("div");
-    box.className = "profile-view";
-    box.innerHTML =
-      `<div class="pc-top">` +
-      (card.profileImageUrl
-        ? `<img class="pc-avatar" src="${escapeHtml(card.profileImageUrl)}" alt="">`
-        : `<span class="pc-avatar pc-avatar-none"></span>`) +
-      `<div class="pc-who">` +
-      `<div class="pc-nick">${escapeHtml(card.nickname || this.nickname)}</div>` +
-      (worn.length > 0
-        ? `<div class="pc-worn">${worn
-            .map((b) => `<span class="pc-badge">${face(b.imageUrl, b.title)}</span>`)
-            .join("")}</div>`
-        : `<div class="pc-none">달고 있는 뱃지 없음</div>`) +
-      `</div></div>` +
-      `<div class="pc-lines">${lines.join("")}</div>` +
-      `<div class="pc-section">` +
-      `<div class="profile-section-title">가지고 있는 뱃지 ${formatNumber(card.badges.length)}개</div>` +
-      (card.badges.length > 0
-        ? `<div class="badge-grid">` +
+    // 가지고 있는 뱃지는 전부 펼쳐 두고, 달고 있는 것에만 초록 테를 두른다
+    const badges =
+      card.badges.length > 0
+        ? `<div class="pro-badges">` +
           card.badges
             .map(
               (b) =>
-                `<div class="badge-choice${b.activated ? " active" : ""}" title="${escapeHtml(b.badgeId)}">` +
+                `<span class="pro-badge${b.activated ? " on" : ""}"` +
+                ` title="${escapeHtml(b.title)}${b.activated ? " (달고 있음)" : ""}">` +
                 face(b.imageUrl, b.title) +
-                `<span class="badge-choice-name">${escapeHtml(b.title)}</span>` +
-                (b.activated
-                  ? `<span class="badge-check">${(b.order ?? 0) || "✓"}</span>`
+                (b.activated && b.order
+                  ? `<i class="pro-order">${b.order}</i>`
                   : "") +
-                `</div>`,
+                `</span>`,
             )
             .join("") +
           `</div>`
-        : `<div class="history-empty">뱃지가 없습니다.</div>`) +
+        : "";
+
+    this.profileEl.classList.remove("hidden");
+    this.profileEl.innerHTML =
+      `<div class="pro-strip">` +
+      `<div class="pro-top">` +
+      (card.profileImageUrl
+        ? `<img class="pro-avatar" src="${escapeHtml(card.profileImageUrl)}" alt="">`
+        : `<span class="pro-avatar pro-avatar-none"></span>`) +
+      `<div class="pro-who">` +
+      `<span class="pro-nick">${escapeHtml(card.nickname || this.nickname)}</span>` +
+      (worn.length > 0
+        ? `<span class="pro-worn">${worn
+            .map((b) => `<span class="pro-badge on">${face(b.imageUrl, b.title)}</span>`)
+            .join("")}</span>`
+        : "")
+      + `</div>` +
+      `<span class="pro-where" title="이 채널 기준입니다">${escapeHtml(channelName(channelId))}</span>` +
       `</div>` +
-      `<div class="settings-help">${escapeHtml(channelName(channelId))} 채널 기준입니다.</div>`;
-    this.listEl.appendChild(box);
+      (chips.length > 0 ? `<div class="pro-chips">${chips.join("")}</div>` : "") +
+      badges +
+      `</div>`;
   }
 
   /** 채널별 분포 — 익명 후원처럼 사람을 구분할 수 없을 때 특히 유용 */
@@ -362,13 +349,6 @@ export class UserHistoryModal {
       s.donationHidden > 0
         ? ` · 금액 숨김 ${formatNumber(s.donationHidden)}건`
         : "";
-
-    if (this.profileMode) {
-      this.statsEl.innerHTML =
-        noteBox +
-        `치지직에 지금 올라 있는 프로필입니다${uid}`;
-      return;
-    }
 
     if (this.mode === "mod") {
       this.statsEl.innerHTML =
@@ -453,10 +433,6 @@ export class UserHistoryModal {
     this.listEl.innerHTML = "";
     this.oldestLoaded = undefined;
     this.loadMoreBtn.classList.add("hidden");
-    if (this.profileMode) {
-      await this.loadProfileCard();
-      return;
-    }
     await this.loadPage();
   }
 

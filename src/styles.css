@@ -1614,110 +1614,185 @@ dialog::backdrop {
   background: none;
 }
 
-/* 치지직 프로필 보기 — 구독·연속 후원·팔로우와 뱃지 */
+/* 치지직 프로필 — 기록 창 맨 위에 붙는 띠 */
 
-.profile-view {
+#user-modal-profile {
+  flex-shrink: 0;
+}
+
+.pro-strip {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 4px 2px;
+  gap: 9px;
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-soft);
 }
 
-.pc-top {
+.pro-loading {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.pro-top {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 11px;
 }
 
-.pc-avatar {
-  width: 52px;
-  height: 52px;
+.pro-avatar {
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   flex-shrink: 0;
   object-fit: cover;
-  background: var(--bg-raised);
+  background: var(--bg);
 }
 
-.pc-avatar-none {
+.pro-avatar-none {
   display: block;
   border: 1px solid var(--border);
 }
 
-.pc-who {
-  min-width: 0;
+.pro-who {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 7px;
+  min-width: 0;
+  flex: 1;
 }
 
-.pc-nick {
-  font-size: 16px;
+.pro-nick {
+  font-size: 15px;
   font-weight: 800;
   letter-spacing: -0.01em;
 }
 
-.pc-worn {
+/* 지금 달고 있는 뱃지 — 닉네임 옆, 채팅에 보이는 그대로 */
+.pro-worn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* 어느 채널을 기준으로 읽은 프로필인지 */
+.pro-where {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pro-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 5px;
 }
 
-.pc-badge img,
-.pc-badge .badge-noimg {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
-.pc-none {
-  color: var(--text-dim);
-  font-size: 11.5px;
-}
-
-.pc-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-raised);
-  font-size: 13px;
-}
-
-.pc-line {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.pc-ico {
+.pro-chip {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 20px;
-  flex-shrink: 0;
-  font-size: 13px;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.4;
 }
 
-.pc-ico img {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
+.pro-chip b {
+  color: var(--text);
+  font-weight: 700;
 }
 
-.pc-hot b {
+.pro-chip.hot {
+  border-color: color-mix(in srgb, #ff7a59 40%, transparent);
+}
+
+.pro-chip.hot b {
   color: #ff7a59;
 }
 
-.pc-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.pro-chip-ico {
+  display: inline-flex;
+  align-items: center;
 }
 
-/* 남의 뱃지는 고르는 것이 아니라 보는 것이라 눌리지 않는다 */
-.profile-view .badge-choice {
-  cursor: default;
+.pro-chip-ico img,
+.pro-chip-ico .badge-noimg {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+
+/* 가지고 있는 뱃지는 접지 않고 전부 펼쳐 둔다 */
+.pro-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.pro-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+}
+
+/* 달고 있지 않은 뱃지는 한 걸음 물러나 있다 */
+.pro-badges .pro-badge {
+  background: var(--bg);
+  border-color: var(--border-soft);
+  opacity: 0.5;
+}
+
+/* 달고 있는 뱃지에만 초록 테를 두른다 */
+.pro-badges .pro-badge.on {
+  opacity: 1;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+}
+
+.pro-badge img,
+.pro-badge .badge-noimg {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  display: block;
+}
+
+/* 몇 번째로 다는 뱃지인지 */
+.pro-order {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #04231a;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 13px;
+  text-align: center;
 }
 
 /* 더할 채널 고르기 — 창 안에서 굴러가는 목록.
