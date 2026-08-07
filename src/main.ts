@@ -1383,24 +1383,38 @@ const paneScroller = edgeScroller(panesEl, "both", 90, 18);
  * Shift를 누르면 채팅 위에서도 위아래 휠로 넘어간다.
  */
 function initPaneWheel(): void {
+  // 터치패드 두 손가락 쓸기는 한 번에 끝나지 않고 잔물결처럼 이어진다.
+  // 옆으로 미는 중이라고 한 번 알아채면 잠깐은 그렇게 이어서 본다 —
+  // 손가락이 조금 비뚤어져 세로 성분이 섞여도 끊기지 않는다.
+  const LATCH_MS = 160;
+  let sidewaysUntil = 0;
+
   panesEl.addEventListener(
     "wheel",
     (e) => {
       if (getSettings().paneLayout !== "columns" || e.ctrlKey) return;
       if (panesEl.scrollWidth <= panesEl.clientWidth + 1) return;
 
-      // 좌우 휠(틸트·터치패드)은 자리를 가리지 않는다
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      const dx = e.deltaX;
+      const dy = e.deltaY;
+      const now = Date.now();
+      // 가로 성분이 세로보다 확실히 작지만 않으면 옆으로 미는 것으로 본다
+      const sideways =
+        Math.abs(dx) >= 1 &&
+        (Math.abs(dx) >= Math.abs(dy) * 0.6 || now < sidewaysUntil);
+
+      if (sideways) {
+        sidewaysUntil = now + LATCH_MS;
         e.preventDefault();
-        panesEl.scrollLeft += e.deltaX;
+        panesEl.scrollLeft += dx;
         return;
       }
 
-      if (e.deltaY === 0) return;
+      if (dy === 0) return;
       const overLog = (e.target as HTMLElement).closest(".pane-messages");
       if (overLog && !e.shiftKey) return;
       e.preventDefault();
-      panesEl.scrollLeft += e.deltaY;
+      panesEl.scrollLeft += dy;
     },
     { passive: false },
   );
