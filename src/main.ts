@@ -1398,10 +1398,9 @@ function initPaneWheel(): void {
       const dx = e.deltaX;
       const dy = e.deltaY;
       const now = Date.now();
-      // 가로 성분이 세로보다 확실히 작지만 않으면 옆으로 미는 것으로 본다
-      const sideways =
-        Math.abs(dx) >= 1 &&
-        (Math.abs(dx) >= Math.abs(dy) * 0.6 || now < sidewaysUntil);
+      // 가로 성분이 조금이라도 있으면 옆으로 미는 것으로 본다.
+      // 터치패드는 손가락이 비뚤어지면 세로 성분이 더 크게 잡히기도 한다.
+      const sideways = dx !== 0 || now < sidewaysUntil;
 
       if (sideways) {
         sidewaysUntil = now + LATCH_MS;
@@ -1418,6 +1417,51 @@ function initPaneWheel(): void {
     },
     { passive: false },
   );
+}
+
+/**
+ * 창 영역을 손으로 잡아 옆으로 민다.
+ *
+ * 터치패드가 가로 스크롤을 내주지 않는 경우가 있어, 눌러서 끄는 길도
+ * 함께 열어 둔다. 글자를 고르거나 버튼을 누르는 일과 부딪히지 않도록
+ * 채팅 글·버튼·입력칸 위에서 시작한 것은 건드리지 않는다.
+ */
+function initPaneDragPan(): void {
+  let startX = 0;
+  let startScroll = 0;
+  let panning = false;
+
+  const grabbable = (t: HTMLElement) =>
+    !t.closest("button, input, textarea, select, a, .msg, .pane-head");
+
+  panesEl.addEventListener("pointerdown", (e) => {
+    // 왼쪽 버튼이거나 휠 버튼일 때만
+    if (e.button !== 0 && e.button !== 1) return;
+    if (e.button === 0 && !grabbable(e.target as HTMLElement)) return;
+    if (panesEl.scrollWidth <= panesEl.clientWidth + 1) return;
+    panning = true;
+    startX = e.clientX;
+    startScroll = panesEl.scrollLeft;
+    panesEl.setPointerCapture(e.pointerId);
+    panesEl.classList.add("panning");
+  });
+
+  panesEl.addEventListener("pointermove", (e) => {
+    if (!panning) return;
+    e.preventDefault();
+    panesEl.scrollLeft = startScroll - (e.clientX - startX);
+  });
+
+  const stop = (e: PointerEvent) => {
+    if (!panning) return;
+    panning = false;
+    panesEl.classList.remove("panning");
+    if (panesEl.hasPointerCapture(e.pointerId)) {
+      panesEl.releasePointerCapture(e.pointerId);
+    }
+  };
+  panesEl.addEventListener("pointerup", stop);
+  panesEl.addEventListener("pointercancel", stop);
 }
 
 /** 사이드바에서 창 영역으로 채널을 끌어다 놓으면 나란히 연다 */
@@ -2745,6 +2789,7 @@ async function main(): Promise<void> {
   initSidebarToggle();
   initPaneDrop();
   initPaneWheel();
+  initPaneDragPan();
   initPaneReorder();
   initPaneLayout();
   initRefocusScroll();

@@ -721,6 +721,13 @@ button:disabled {
   cursor: move;
 }
 
+/* 잡아 끄는 중에는 커서로 알린다 */
+#panes.panning {
+  cursor: grabbing;
+  user-select: none;
+  scroll-snap-type: none;
+}
+
 #panes.drop-here {
   outline: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
   outline-offset: -6px;
