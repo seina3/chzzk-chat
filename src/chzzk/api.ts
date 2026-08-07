@@ -183,36 +183,73 @@ export interface ChzzkBadge {
   order: number | null;
 }
 
-export interface MyProfileCard {
+/** 이 채널에서의 구독 현황 */
+export interface SubscriptionInfo {
+  /** 누적 구독 개월 */
+  months: number;
+  /** 구독 등급 (1티어·2티어…) */
+  tier: number;
+  /** 등급 이름 — 채널마다 다르다 ("거대흑무용이" 같은) */
+  tierName: string;
+  /** 구독 뱃지 그림과 기간 표시 ("1.5년") */
+  badgeUrl: string | null;
+  badgeTitle: string;
+}
+
+export interface ProfileCard {
+  userIdHash: string;
   nickname: string;
   profileImageUrl: string | null;
+  /** 치지직 권한 코드 (streamer / …manager / common_user) */
+  roleCode: string;
   /** "YYYY-MM-DD HH:mm:ss" — 이 채널을 팔로우한 날 (팔로우 안 했으면 null) */
   followDate: string | null;
+  subscription: SubscriptionInfo | null;
+  /** 며칠째 이어서 후원 중인지 (0이면 이어지는 중이 아님) */
+  continuousDonationDays: number;
   badges: ChzzkBadge[];
 }
 
 /**
- * 이 채널에서의 내 프로필 카드 — 닉네임·프로필 사진·팔로우 시작일과
- * 쓸 수 있는 뱃지 목록.
+ * 이 채널에서의 프로필 카드 — 닉네임·프로필 사진·팔로우 시작일·구독 현황과
+ * 뱃지 목록. 치지직 웹이 닉네임을 눌렀을 때 부르는 것과 같은 조회다.
  *
- * 치지직 웹이 프로필을 열 때 부르는 것과 같은 조회다. 응답의 필드
- * 이름을 문서로 확인할 수 없어, badgeId를 가진 객체를 응답 전체에서
- * 훑어 모으고 나머지도 이름이 맞는 값을 찾아 쓴다.
+ * 내 것이든 남의 것이든 같은 주소를 쓴다 (userIdHash만 달라진다).
  */
-export async function getMyProfileCard(
+export async function getProfileCard(
   chatChannelId: string,
   userIdHash: string,
-): Promise<MyProfileCard | null> {
+): Promise<ProfileCard | null> {
   if (!cookieHeader()) return null;
-  const card = await getContent<unknown>(
+  const card = await getContent<any>(
     `${COMM_BASE}/v1/chats/${chatChannelId}/users/${userIdHash}/profile-card?chatType=STREAMING`,
   ).catch(() => null);
   if (!card) return null;
   return {
+    userIdHash: card.userIdHash ?? userIdHash,
     nickname: findByKey(card, /^nickname$/i) ?? "",
     profileImageUrl: findByKey(card, /profileimage/i),
+    roleCode: card.userRoleCode ?? "common_user",
     followDate: findByKey(card, /followdate/i),
+    subscription: readSubscription(card),
+    continuousDonationDays:
+      Number(card?.streamingProperty?.donationActivity?.continuousDonationDays) || 0,
     badges: readViewerBadges(card) ?? scanForBadges(card),
+  };
+}
+
+/** streamingProperty.subscription — 구독 개월·등급·등급 이름 */
+function readSubscription(content: any): SubscriptionInfo | null {
+  const sub = content?.streamingProperty?.subscription;
+  if (!sub) return null;
+  const months = Number(sub.accumulativeMonth) || 0;
+  if (months <= 0 && !sub.tierName) return null;
+  return {
+    months,
+    tier: Number(sub.tier) || 0,
+    tierName: sub.tierName ?? "",
+    badgeUrl: sub.badge?.imageUrl ?? null,
+    badgeTitle: sub.badge?.title ?? "",
   };
 }
 

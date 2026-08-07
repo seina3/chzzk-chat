@@ -10,7 +10,7 @@ import {
   activateBadges,
   getChannelInfo,
   getLiveDetail,
-  getMyProfileCard,
+  getProfileCard,
   getUserStatus,
   parseChannelInput,
   type ChzzkBadge,
@@ -72,7 +72,14 @@ import { UserHistoryModal } from "./ui/user-history";
 
 let notifyGranted = false;
 
-const userModal = new UserHistoryModal((uid, nick) => openNoteDialog(uid, nick));
+const userModal = new UserHistoryModal(
+  (uid, nick) => openNoteDialog(uid, nick),
+  // 치지직 프로필은 채팅방 단위로 조회한다 (그 채널에서의 구독·뱃지)
+  async (uid, channelId) => {
+    const chatChannelId = await resolveChatChannelId(channelId);
+    return chatChannelId ? getProfileCard(chatChannelId, uid) : null;
+  },
+);
 const searchModal = new GlobalSearchModal((uid, nick) => {
   void userModal.open(uid, nick);
 });
@@ -1858,7 +1865,7 @@ async function openBadgePicker(channelId: string): Promise<void> {
   }
   badgeChatId = chatChannelId;
 
-  const card = await getMyProfileCard(chatChannelId, uid).catch(() => null);
+  const card = await getProfileCard(chatChannelId, uid).catch(() => null);
   if (badgeChannelId !== channelId) return;
   if (!card) {
     listEl.innerHTML =

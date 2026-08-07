@@ -1614,6 +1614,112 @@ dialog::backdrop {
   background: none;
 }
 
+/* 치지직 프로필 보기 — 구독·연속 후원·팔로우와 뱃지 */
+
+.profile-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 2px;
+}
+
+.pc-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pc-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: var(--bg-raised);
+}
+
+.pc-avatar-none {
+  display: block;
+  border: 1px solid var(--border);
+}
+
+.pc-who {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pc-nick {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.pc-worn {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pc-badge img,
+.pc-badge .badge-noimg {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.pc-none {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.pc-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  font-size: 13px;
+}
+
+.pc-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.pc-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.pc-ico img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.pc-hot b {
+  color: #ff7a59;
+}
+
+.pc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 남의 뱃지는 고르는 것이 아니라 보는 것이라 눌리지 않는다 */
+.profile-view .badge-choice {
+  cursor: default;
+}
+
 /* 더할 채널 고르기 — 창 안에서 굴러가는 목록.
    운영체제가 그리는 목록 상자는 채널이 많으면 창 밖으로 흘러 잘린다. */
 .pick-list {
