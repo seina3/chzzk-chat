@@ -229,10 +229,6 @@ export class UserHistoryModal {
         ? `<img src="${escapeHtml(url)}" alt="" title="${escapeHtml(title)}" loading="lazy">`
         : `<span class="badge-noimg" title="${escapeHtml(title)}">?</span>`;
 
-    const worn = card.badges
-      .filter((b) => b.activated)
-      .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
-
     const chips: string[] = [];
     if (card.subscription) {
       const s = card.subscription;
@@ -283,12 +279,7 @@ export class UserHistoryModal {
         : `<span class="pro-avatar pro-avatar-none"></span>`) +
       `<div class="pro-who">` +
       `<span class="pro-nick">${escapeHtml(card.nickname || this.nickname)}</span>` +
-      (worn.length > 0
-        ? `<span class="pro-worn">${worn
-            .map((b) => `<span class="pro-badge on">${face(b.imageUrl, b.title)}</span>`)
-            .join("")}</span>`
-        : "")
-      + `</div>` +
+      `</div>` +
       `<span class="pro-where" title="이 채널 기준입니다">${escapeHtml(channelName(channelId))}</span>` +
       `</div>` +
       (chips.length > 0 ? `<div class="pro-chips">${chips.join("")}</div>` : "") +

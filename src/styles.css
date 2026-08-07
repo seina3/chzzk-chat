@@ -1670,13 +1670,6 @@ dialog::backdrop {
   letter-spacing: -0.01em;
 }
 
-/* 지금 달고 있는 뱃지 — 닉네임 옆, 채팅에 보이는 그대로 */
-.pro-worn {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-
 /* 어느 채널을 기준으로 읽은 프로필인지 */
 .pro-where {
   flex-shrink: 0;
